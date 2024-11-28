@@ -37,42 +37,76 @@
 #define V5_A_EN 7
 #define V3V3_PG 18
 #define V5_A_PG 35
+// Battery level macro definition
+#define BATV_TO_BAR(V) (V * 4.8f - 26.4f)
 
-// EXT ADC
+
+// Ext ADC
 #define SCLK 12
 #define MISO 13
 #define MOSI 11
 #define EXT_ADC_CS 10
+#define EXT_ADC_AVG_NUM 20
+#define EXT_ANALOG_READ_DELAY 333
+#define NO_ACTIVITY_THRESHOLD_TASK_WAKES 1200  // Multiples of EXT_ANALOG_READ_DELAY eg. 600*500ms = 5 minutes or 1200*250ms = 5 minutes
+#define NO_ACTIVITY_WEIGHT_RANGE_LB 5
+
+// Config Switch
+#define SW_1 8
+#define SW_2 9
 
 // Constants
 #define VIN_LVL_PIN 5 //  10k & 3.3k Vdiv => 1/0.248
-#define VIN_LVL_COUNTS_TO_V 0.0032486518f // Multiply counts by this scalar to get Volts. => 1/(4096/3.3)*0.248
-#define PWR_5V_LVL_COUNTS_TO_V 0.001611328125f // Multiply counts by this scalar to get Volts. => 1/(4096/3.3)*0.5
+#define V_3_3 3.3f
+#define INT_ADC_M_VAL 0.995f
+#define INT_ADC_B_VAL 0.2413f
+const float PWR_VIN_LVL_COUNTS_TO_V = 1/((4096/V_3_3)*0.248); // Multiply counts by this scalar to get Volts. => 1/((4096/3.3)*0.248)
+const float PWR_VIN_LVL_VDIV_SCLR = (1/0.248); // Multiply ADC Volts by this scalar to get real Volts. => (1/0.248)
+const float  PWR_5V_LVL_COUNTS_TO_V = 1/((4096/V_3_3)*0.5); // Multiply counts by this scalar to get Volts. => 1/((4096/3.3)*0.5)
+const float  PWR_5V_LVL_VDIV_SCLR = (1/0.5); // // Multiply ADC Volts by this scalar to get real Volts. => (1/0.5)
 #define VIN_LVL_EN_PIN 4
 #define PWR_5V_A_LVL_PIN 6
+#define SPI_FREQ 80000000
+#define INT_ADC_TASK_DELAY 5000
 
 // UI
-#define LONG_PRESS_LOOP_DELAY 50 // 50ms 
-#define LONG_PRESS_COUNT_THRESHOLD 40 // multiples of LONG_PRESS_LOOP_DELAY (ex. for LONG_PRESS_DELAY = 50ms (40 counts = 2s)
-#define DEBOUNCE_TIME 25
+#define LONG_PRESS_LOOP_DELAY 10 // 10ms 
+#define LONG_PRESS_COUNT_THRESHOLD 150 // multiples of LONG_PRESS_LOOP_DELAY (ex. for LONG_PRESS_DELAY = 10ms (100 counts = 1s)
+#define DEBOUNCE_TIME 50
 #define SCALE_CAP 500
 #define SCALE_CAP_UNIT lb
-#define MIN_CAL_VAL 100
+#define MIN_CAL_VAL 25
 #define MAX_CAL_VAL 500
 #define DEFAULT_UNIT lb
+#define USER_MSG_Y_POS 23
+#define USER_MSG_Y_LINE_HEIGHT 10
 
 // LCD weight reading formatting constants
 #define WVAL_X_POS 112 // Reading is rigit-aligned, so x position should be the right most location
-#define WVAL_Y_POS 37
+#define WVAL_Y_POS 44
 #define WVAL_DEC_PLS 1
 #define WVAL_PREC 1
 #define UNIT_X_POS 115
-#define UNIT_Y_POS 37
+#define UNIT_Y_POS WVAL_Y_POS
 #define DEC_PT_W_PX 5  // Actual width of the decimal point in px
-#define DEC_PT_S_PX 9  // Space generated between numbers to allow for decimal point in px (usually ~1.5x dec pt width)
+#define DEC_PT_S_PX 7  // Space generated between numbers to allow for decimal point in px (usually ~1.5x dec pt width)
 #define WVAL_FONT u8g2_font_inb21_mn
 #define UNIT_FONT u8g2_font_7x13B_mr
 #define MSG_FONT u8g2_font_6x12_mr
+#define LCD_UPDATE_DELAY 333
+
+// LCD battery indicator formatting constants
+#define BAT_IND_WIDTH 14
+#define BAT_IND_HEIGHT 6
+#define BAT_BUMP_HEIGHT 2
+#define BAT_BUMP_WIDTH 2
+#define BAT_IND_Y_POS WVAL_Y_POS - 29
+#define BAT_IND_X_POS u8g2.getDisplayWidth() - BAT_IND_WIDTH
+
+// FreeRTOS constants
+//  240, 160, 80    <<< For all XTAL types
+//  40, 20, 10      <<< For 40MHz XTAL
+#define REDUCED_CPU_SPEED 80  // Current measured at 30mA @ 9v at 40MHz.  Any slower than 40MHz and the UI is really laggy.
 
 // U8g2 Contructor (Frame Buffer)
 U8G2_ST7567_ENH_DG128064I_F_4W_SW_SPI u8g2(U8G2_R2, /* clock=*/ SCLK, /* data=*/ MOSI, /* cs=*/ LCD_CS, /* dc=*/ LCD_A0, /* reset=*/ LCD_RST); 
@@ -81,8 +115,11 @@ U8G2_ST7567_ENH_DG128064I_F_4W_SW_SPI u8g2(U8G2_R2, /* clock=*/ SCLK, /* data=*/
 PRDC_AD7193 AD7193;
 
 //Penner Logo XBM
-#define penner_logo_width 114
-#define penner_logo_height 28
+#define LOGO_WIDTH 114
+#define LOGO_HEIGHT 28
+#define LOGO_X_POS 6
+#define LOGO_Y_POS 15
+
 static uint8_t penner_logo_bits[] = {
   0x00, 0xC0, 0x1F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
   0x00, 0x00, 0x00, 0x00, 0xF0, 0x7F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
@@ -131,23 +168,36 @@ void TaskUI( void *pvParameters );
 SemaphoreHandle_t SPImutex = xSemaphoreCreateMutex();
 
 // Global variables
-int32_t extADCresult = 0;
+int32_t extADCResultCh0 = 0;
+int32_t extADCResultCh1 = 0;
+int32_t extADCResult = 0;
 float extADCweight = 0.0;
+float vinVolts = 0.0;
+float v5vVolts = 0.0;
+
+bool configSwitch1 = 0;
+bool configSwitch2 = 0;
 
 enum e_backlightEnable {off = 0, on = 1, on_motion = 2};
 e_backlightEnable backlightEnable = off;
+// setting PWM properties
+const uint32_t backlightPWMfreq = 5000;
+const uint8_t backlightPWMres = 8;
+const uint8_t backlightPWM = 80;
+
 enum e_unitVal {kg = 0, lb = 1};
 e_unitVal unitVal = DEFAULT_UNIT;
 
-float calValue = 1.0; // default global calibration value
+float calValue = 429.4967296f; // default global calibration value (results in uV at 5Vexc and 128x gain)
 int32_t zeroValue = 0; // default zero value
-float tareValue = 0.0; // default tare value
+float tareValue = 0.0f; // default tare value
 uint32_t calWeight = MIN_CAL_VAL; // default calibration weight
 e_unitVal calUnit = DEFAULT_UNIT; // default calibration unit
 
 const float kgtolbScalar = 2.20462;
 const String unitAbbr[] = {"kg", "lb"};
 bool updateLCDWeight = true;
+bool noActivityPowerDownFlag = false;
 
 const int calVal_eepromAdress = 0;
 const int zeroVal_eepromAdress = calVal_eepromAdress + sizeof(calValue);
@@ -186,6 +236,13 @@ void setup() {
   uint32_t EEPROMcalWeight;
   e_unitVal EEPROMcalUnit;
 
+  setCpuFrequencyMhz(REDUCED_CPU_SPEED);
+
+  // Initialize serial communication at 115200 bits per second:
+  Serial.begin(115200);
+
+  delay(250);
+
   // Enable 3.3V 
   pinMode(V3V3_EN, OUTPUT);
   digitalWrite(V3V3_EN, HIGH);
@@ -197,17 +254,17 @@ void setup() {
   // Disable LCD backlight
   pinMode(LCD_BACKLIGHT, OUTPUT);
   digitalWrite(LCD_BACKLIGHT, LOW);
-
+  // Configure LED PWM
+  ledcAttach(LCD_BACKLIGHT, backlightPWMfreq, backlightPWMres);
+  ledcWrite(LCD_BACKLIGHT, 0);
 
   // Set external ADC CS inactive
   pinMode(EXT_ADC_CS, OUTPUT);
   digitalWrite(EXT_ADC_CS, HIGH);
 
-
   // Set LCD CS inactive
   pinMode(LCD_CS, OUTPUT);
   digitalWrite(LCD_CS, HIGH);
-
 
   // User buttons
   pinMode(PWR_ZERO_BTN, INPUT);
@@ -225,12 +282,42 @@ void setup() {
   pinMode(VIN_LVL_EN_PIN, OUTPUT);
   digitalWrite(VIN_LVL_EN_PIN, LOW);
 
+  // Set config switch inputs
+  pinMode(SW_1, INPUT);
+  pinMode(SW_2, INPUT);
+  configSwitch1 = digitalRead(SW_1);
+  configSwitch2 = digitalRead(SW_2);
 
-  // Initialize serial communication at 115200 bits per second:
-  Serial.begin(115200);
-  delay(500);
+  EEPROM.begin(512);
+  EEPROM.get(calVal_eepromAdress, EEPROMcalValue);
+  EEPROM.get(zeroVal_eepromAdress, EEPROMZeroValue);
+  EEPROM.get(backlightEnable_eepromAdress, EEPROMbacklightEnable);
+  EEPROM.get(unitVal_eepromAdress, EEPROMunitVal);  
+  EEPROM.get(calWeight_eepromAdress, EEPROMcalWeight);
+  EEPROM.get(calUnit_eepromAdress, EEPROMcalUnit);
+
+  // If calValue is a real number, that means we've calibrated the unit and calValue and zeroValue are legitimate values
+  if ((!isnan(EEPROMcalValue)) && (EEPROMcalValue>0))
+  {
+    calValue = EEPROMcalValue;
+    zeroValue = EEPROMZeroValue;
+  } 
+  if (EEPROMbacklightEnable >= 0 && EEPROMbacklightEnable <= 2) backlightEnable = EEPROMbacklightEnable;
+  if (EEPROMunitVal >= 0 && EEPROMunitVal <= 1) unitVal = EEPROMunitVal;  
+  if (EEPROMcalWeight != 4294967295) calWeight = EEPROMcalWeight;  
+  if (EEPROMcalUnit >= 0 && EEPROMcalUnit <= 1)
+  {
+    calUnit = EEPROMcalUnit; 
+  }
+  else
+  {
+    calUnit = unitVal;
+  }
+
+  ledcWrite(LCD_BACKLIGHT, backlightPWM * backlightEnable);
 
   SPI.begin(SCLK, MISO, MOSI, LCD_CS);
+  SPI.setFrequency(SPI_FREQ);
   // Start LCD
   u8g2.begin();
   // Set contrast
@@ -242,45 +329,26 @@ void setup() {
   SPI.end();
   digitalWrite(LCD_CS, HIGH);
 
+  // Splash screen delay
+  delay(1500);
+
+  Serial.print("Scale initializing.\n\r");
+  Serial.printf("Config Switch1: %d\n\r", configSwitch1);
+  Serial.printf("Config Switch2: %d\n\r", configSwitch2);
+
   Serial.printf("Default calVal: %f\n\r", calValue);
   Serial.printf("Default zeroVal: %d\n\r", zeroValue);
   Serial.printf("Default backlightEnable: %d\n\r", backlightEnable);
   Serial.printf("Default unitVal: %d\n\r", unitVal);
   Serial.printf("Default calWeight: %u\n\r", calWeight);
   Serial.printf("Default calUnit: %d\n\r", calUnit);
-
-  EEPROM.begin(512);
-  EEPROM.get(calVal_eepromAdress, EEPROMcalValue);
-  EEPROM.get(zeroVal_eepromAdress, EEPROMZeroValue);
-  EEPROM.get(backlightEnable_eepromAdress, EEPROMbacklightEnable);
-  EEPROM.get(unitVal_eepromAdress, EEPROMunitVal);  
-  EEPROM.get(calWeight_eepromAdress, EEPROMcalWeight);
-  EEPROM.get(calUnit_eepromAdress, EEPROMcalUnit);
   
   Serial.printf("EEPROM calVal: %f\n\r", EEPROMcalValue);
   Serial.printf("EEPROM zeroVal: %d\n\r", EEPROMZeroValue);  
-  // If calValue is a real number, that means we've calibrated the unit and calValue and zeroValue are legitimate values
-  if ((!isnan(EEPROMcalValue)) && (EEPROMcalValue>0))
-  {
-    calValue = EEPROMcalValue;
-    zeroValue = EEPROMZeroValue;
-  } 
-  
   Serial.printf("EEPROM backlightEnable: %d\n\r", EEPROMbacklightEnable);
-  if (EEPROMbacklightEnable >= 0 && EEPROMbacklightEnable <= 2) backlightEnable = EEPROMbacklightEnable;
   Serial.printf("EEPROM unitVal: %d\n\r", EEPROMunitVal);
-  if (EEPROMunitVal >= 0 && EEPROMunitVal <= 1) unitVal = EEPROMunitVal;  
   Serial.printf("EEPROM calWeight: %u\n\r", EEPROMcalWeight);
-  if (EEPROMcalWeight != 4294967295) calWeight = EEPROMcalWeight;  
   Serial.printf("EEPROM calUnit: %d\n\r", EEPROMcalUnit);
-  if (EEPROMcalUnit >= 0 && EEPROMcalUnit <= 1)
-  {
-    calUnit = EEPROMcalUnit; 
-  }
-  else
-  {
-    calUnit = unitVal;
-  }
 
   Serial.printf("calVal: %f\n\r", calValue);
   Serial.printf("zeroVal: %u\n\r", zeroValue);
@@ -289,10 +357,9 @@ void setup() {
   Serial.printf("calWeight: %u\n\r", calWeight);
   Serial.printf("calUnit: %d (%s)\n\r", calUnit, unitAbbr[calUnit]);
 
-  digitalWrite(LCD_BACKLIGHT, backlightEnable);  
-
   // Initialize external ADC
   SPI.begin(SCLK, MISO, MOSI, EXT_ADC_CS);
+  SPI.setFrequency(SPI_FREQ);
   AD7193.setSPI(SPI);
   AD7193.begin();
   if(0){ //!AD7193.begin()) {
@@ -306,34 +373,29 @@ void setup() {
     AD7193.enableChop(false);
     AD7193.enableBuffer(true);
     AD7193.rangeSetup(1, AD7193_CONF_GAIN_128);
-    AD7193.channelSelect(AD7193_CH_0);
     AD7193.setBPDSW(true);
+    AD7193.channelSelect(AD7193_CH_0);
     Serial.println(F("AD7193 Initialized!"));
     delay(250);
-    extADCresult = AD7193.singleConversion();
-    tareValue = (extADCresult - zeroValue)/calValue;
-    Serial.printf("ADC Result: %d\n", extADCresult);
+
+    extADCResultCh0 = AD7193.continuousReadAverage(EXT_ADC_AVG_NUM);
+    Serial.printf("ADC Ch0 Result Avg: %d\n", extADCResultCh0);
+
+    AD7193.channelSelect(AD7193_CH_1);
+    delay(5);
+
+    extADCResultCh1 = AD7193.continuousReadAverage(EXT_ADC_AVG_NUM);
+    Serial.printf("ADC Ch1 Result Avg: %d\n", extADCResultCh1);    
+
+    // If DIP switch 1 is off (logic high), then scale is configured for single channel.  Otherwise use both channels.
+    if(configSwitch1) extADCResult = extADCResultCh0; else extADCResult = extADCResultCh0 + extADCResultCh1;
+
+    tareValue = (extADCResult - zeroValue)/calValue;
     Serial.printf("Tare Value: %f\n", tareValue);
-    delay(250);
-    extADCresult = AD7193.singleConversion();
-    tareValue = (extADCresult - zeroValue)/calValue;
-    Serial.printf("ADC Result: %d\n", extADCresult);
-    Serial.printf("Tare Value: %f\n", tareValue);
-    delay(250);
-    extADCresult = AD7193.singleConversion();
-    tareValue = (extADCresult - zeroValue)/calValue;
-    Serial.printf("ADC Result: %d\n", extADCresult);
-    Serial.printf("Tare Value: %f\n", tareValue);    
-    delay(250);
-    extADCresult = AD7193.singleConversion();
-    tareValue = (extADCresult - zeroValue)/calValue;
-    Serial.printf("ADC Result: %d\n", extADCresult);
-    Serial.printf("Tare Value: %f\n", tareValue);    
+
     SPI.end();
   }
   
-  // Splash screen delay
-  delay(750);
   u8g2.clearBuffer();
   u8g2.sendBuffer();
 
@@ -347,19 +409,18 @@ void setup() {
   assert(SPImutex);
 
   // Set up tasks
- 
-  xTaskCreatePinnedToCore(
-    TaskExtAnalogRead
-    ,  "Ext ADC Task" // A name just for humans
-    ,  2048        // The stack size can be checked by calling `uxHighWaterMark = uxTaskGetStackHighWaterMark(NULL);`
-    ,  NULL // Task parameter which can modify the task behavior. This must be passed as pointer to void.
-    ,  4  // Priority
-    ,  &xHandleTaskExtAnalogRead
-    ,  ARDUINO_RUNNING_CORE
+      xTaskCreatePinnedToCore(
+    TaskIntAnalogRead
+    ,  "Analog Read"
+    ,  2048  // Stack size
+    ,  NULL  // When no parameter is used, simply pass NULL
+    ,  1  // Priority
+    ,  &xHandleTaskIntAnalogRead
+    ,  ARDUINO_RUNNING_CORE // Core on which the task will run
     );
 
-  delay(100); // Separate the two tasks using the SPI bus by a short time to try to avoid writing at the same time (we also have a mutex)
-
+    delay(100); // Wait for the battery level to be measured before displaying to the screen.
+    
   xTaskCreatePinnedToCore(
     TaskUpdateWeightReadingLCD
     ,  "Update Weight LCD"
@@ -370,14 +431,16 @@ void setup() {
     ,  ARDUINO_RUNNING_CORE // Core on which the task will run
     );
 
+  while (extADCResultCh0 == 0); // Separate the two tasks using the SPI bus by a short time to try to avoid writing at the same time (we also have a mutex)
+
   xTaskCreatePinnedToCore(
-    TaskIntAnalogRead
-    ,  "Analog Read"
-    ,  2048  // Stack size
-    ,  NULL  // When no parameter is used, simply pass NULL
-    ,  2  // Priority
-    ,  &xHandleTaskIntAnalogRead
-    ,  ARDUINO_RUNNING_CORE // Core on which the task will run
+    TaskExtAnalogRead
+    ,  "Ext ADC Task" // A name just for humans
+    ,  2048        // The stack size can be checked by calling `uxHighWaterMark = uxTaskGetStackHighWaterMark(NULL);`
+    ,  NULL // Task parameter which can modify the task behavior. This must be passed as pointer to void.
+    ,  3  // Priority
+    ,  &xHandleTaskExtAnalogRead
+    ,  ARDUINO_RUNNING_CORE
     );
 
     xTaskCreatePinnedToCore(
@@ -385,7 +448,7 @@ void setup() {
     ,  "Check Power/Zero Button"
     ,  2048  // Stack size
     ,  NULL  // When no parameter is used, simply pass NULL
-    ,  3  // Priority
+    ,  4  // Priority
     ,  &xHandleTaskPowerZeroButton // With task handle we will be able to manipulate with this task.
     ,  ARDUINO_RUNNING_CORE // Core on which the task will run
     );
@@ -395,7 +458,7 @@ void setup() {
     ,  "Check Unit Button"
     ,  2048  // Stack size
     ,  NULL  // When no parameter is used, simply pass NULL
-    ,  3  // Priority
+    ,  4  // Priority
     ,  &xHandleTaskUnitButton // With task handle we will be able to manipulate with this task.
     ,  ARDUINO_RUNNING_CORE // Core on which the task will run
     );
@@ -405,7 +468,7 @@ void setup() {
     ,  "Check Aux Button"
     ,  2048  // Stack size
     ,  NULL  // When no parameter is used, simply pass NULL
-    ,  3  // Priority
+    ,  4  // Priority
     ,  &xHandleTaskAuxButton // With task handle we will be able to manipulate with this task.
     ,  ARDUINO_RUNNING_CORE // Core on which the task will run
     );    
@@ -420,7 +483,6 @@ void setup() {
     ,  ARDUINO_RUNNING_CORE // Core on which the task will run
     );
 
-
   Serial.printf("Scale initialized.\n");
   // Now the task scheduler, which takes over control of scheduling individual tasks, is automatically started.
 }
@@ -434,6 +496,7 @@ void loop(){
 
 void TaskUI(void *pvParameters)
 {
+  TickType_t xLastWakeTime;
   ( void ) pvParameters;
   for (;;)
   {
@@ -443,7 +506,7 @@ void TaskUI(void *pvParameters)
       // Do zero routine
       Serial.printf("Zero scale flag set.\n");
       powerButtonFlag = no_press_flag;
-      tareValue = (extADCresult - zeroValue)/calValue;
+      tareValue = (extADCResult - zeroValue)/calValue;
       Serial.printf("Tare Value: %f\n", tareValue);
     }
     else if (powerButtonFlag == long_press_flag)
@@ -482,8 +545,7 @@ void TaskUI(void *pvParameters)
       Serial.printf("Change unit flag set.\n");
       unitButtonFlag = no_press_flag;
       if(unitVal == kg) unitVal = lb;
-      else if(unitVal == lb) unitVal = kg;
-      EEPROM.put(unitVal_eepromAdress, unitVal);  
+      else if(unitVal == lb) unitVal = kg;  
     }
     else if (unitButtonFlag == long_press_flag)
     {
@@ -510,9 +572,8 @@ void TaskUI(void *pvParameters)
         else if(backlightEnable == on) backlightEnable = off;
         //else if(backlightEnable == on) backlightEnable = on_motion;
         //else if(backlightEnable == on_motion) backlightEnable = off;        
-        EEPROM.put(backlightEnable_eepromAdress, backlightEnable);
         Serial.printf("Backlight toggle flag set. Backlight = %d\n", backlightEnable);
-        digitalWrite(LCD_BACKLIGHT, (backlightEnable != off));
+        ledcWrite(LCD_BACKLIGHT, backlightPWM * backlightEnable);
         unitButtonFlag = no_press_flag;
       }
     }
@@ -529,21 +590,54 @@ void TaskUI(void *pvParameters)
       // Do aux button long press action
       auxButtonFlag = no_press_flag;
     }
-    vTaskDelay(25/portTICK_PERIOD_MS);
+    xTaskDelayUntil(&xLastWakeTime, 25/portTICK_PERIOD_MS);
   }
 }
 
 void TaskExtAnalogRead(void *pvParameters)
 {
   ( void ) pvParameters;
+  TickType_t xLastWakeTime;
+  static uint32_t taskWakesSinceWeightChange = 0;
+  static float lastExtADCweight = 0; 
+  static float weightChangeLB = 0; 
 
   for (;;){ // A Task shall never return or exit.
+    lastExtADCweight = extADCweight;
     xSemaphoreTake(SPImutex, portMAX_DELAY); // enter critical section
     SPI.begin(SCLK, MISO, MOSI, EXT_ADC_CS);
-    extADCresult = AD7193.singleConversion();
+    SPI.setFrequency(SPI_FREQ);
+    AD7193.channelSelect(AD7193_CH_0);
+    vTaskDelay(5/portTICK_PERIOD_MS);
+    extADCResultCh0 = AD7193.continuousReadAverage(EXT_ADC_AVG_NUM);
+    AD7193.channelSelect(AD7193_CH_1);
+    vTaskDelay(5/portTICK_PERIOD_MS);
+    extADCResultCh1 = AD7193.continuousReadAverage(EXT_ADC_AVG_NUM);
     SPI.end();
     xSemaphoreGive(SPImutex); // exit critical section
-    vTaskDelay(250/portTICK_PERIOD_MS);
+      
+    // If DIP switch 1 is off (logic high), then scale is configured for single channel.  Otherwise use both channels.
+    if(configSwitch1) extADCResult = extADCResultCh0; else extADCResult = extADCResultCh0 + extADCResultCh1;
+    extADCweight = (extADCResult - zeroValue)/calValue  - tareValue;
+    if(calUnit == lb && unitVal == kg) extADCweight = extADCweight / kgtolbScalar;
+    else if(calUnit == kg && unitVal == lb) extADCweight = extADCweight * kgtolbScalar;
+    extADCweight = removeNegativeSignFromZero(extADCweight);
+
+    weightChangeLB = abs(lastExtADCweight - extADCweight);
+    if(unitVal == kg) weightChangeLB = (weightChangeLB * kgtolbScalar);
+    if(weightChangeLB > NO_ACTIVITY_WEIGHT_RANGE_LB) taskWakesSinceWeightChange = 0; else taskWakesSinceWeightChange++;
+    if(taskWakesSinceWeightChange > NO_ACTIVITY_THRESHOLD_TASK_WAKES)
+    {
+      noActivityPowerDownFlag = true;
+      Serial.println("No activity - power down.");
+      powerDown();
+    }
+    else 
+    {
+      noActivityPowerDownFlag = false;
+    }
+
+    xTaskDelayUntil(&xLastWakeTime, EXT_ANALOG_READ_DELAY/portTICK_PERIOD_MS);
   }
 }
 
@@ -553,24 +647,27 @@ void TaskIntAnalogRead(void *pvParameters)
   for (;;)
   {
     digitalWrite(VIN_LVL_EN_PIN, HIGH);
-    vTaskDelay(10);  // Delay to settle LPF
+    vTaskDelay(10/portTICK_PERIOD_MS);  // Delay to settle LPF
     // read the input on analog pin:
-    float sensorValue = analogRead(VIN_LVL_PIN)*VIN_LVL_COUNTS_TO_V;
+    //sensorValue = analogRead(VIN_LVL_PIN)*PWR_VIN_LVL_COUNTS_TO_V*INT_ADC_M_VAL+INT_ADC_B_VAL;
+    vinVolts = analogReadVoltage(VIN_LVL_PIN)*PWR_VIN_LVL_VDIV_SCLR;
     char vBuffer[6];
-    dtostrf(sensorValue,4,2, vBuffer);  // Cannot use printf with floats with small task sizes (<2048) - so do this instead
+    dtostrf(vinVolts,4,2, vBuffer);  // Cannot use printf with floats with small task sizes (<2048) - so do this instead
     digitalWrite(VIN_LVL_EN_PIN, LOW);
     // print out the value you read:
-    //Serial.printf("Vin: %s\t", vBuffer);
-    sensorValue = analogRead(PWR_5V_A_LVL_PIN)*PWR_5V_LVL_COUNTS_TO_V;
-    dtostrf(sensorValue,4,2, vBuffer);
-    //Serial.printf("5V_A: %s\n", vBuffer);
-    vTaskDelay(3000/portTICK_PERIOD_MS); // 30s delay
+    Serial.printf("Vin: %s\t", vBuffer);
+    //sensorValue = analogRead(PWR_5V_A_LVL_PIN)*PWR_5V_LVL_COUNTS_TO_V*INT_ADC_M_VAL+INT_ADC_B_VAL;
+    v5vVolts = analogReadVoltage(PWR_5V_A_LVL_PIN)*PWR_5V_LVL_VDIV_SCLR;
+    dtostrf(v5vVolts,4,2, vBuffer);
+    Serial.printf("5V_A: %s\n", vBuffer);
+    vTaskDelay(INT_ADC_TASK_DELAY/portTICK_PERIOD_MS);
   }
 }
 
 void TaskPowerZeroButton(void *pvParameters)
 { 
   static uint8_t powerButtonCounter = 0;
+  TickType_t xLastWakeTime;
 
   ( void ) pvParameters;
 
@@ -603,7 +700,7 @@ void TaskPowerZeroButton(void *pvParameters)
           // While user has button held down, don't do anything else
           while(digitalRead(PWR_ZERO_BTN))
           {
-            vTaskDelay(250/portTICK_PERIOD_MS);
+            vTaskDelay(100/portTICK_PERIOD_MS);
           }
         }
         else
@@ -626,13 +723,14 @@ void TaskPowerZeroButton(void *pvParameters)
       powerButtonCounter = 0;
     }
 
-    vTaskDelay(DEBOUNCE_TIME/portTICK_PERIOD_MS);
+    xTaskDelayUntil(&xLastWakeTime, DEBOUNCE_TIME/portTICK_PERIOD_MS);
   }
 }
 
 void TaskUnitButton(void *pvParameters)
 {  
   static uint8_t unitButtonCounter = 0;
+  TickType_t xLastWakeTime;
 
   ( void ) pvParameters;
 
@@ -659,7 +757,7 @@ void TaskUnitButton(void *pvParameters)
           // While user has button held down, don't do anything else
           while(!digitalRead(UNIT_BTN))
           {
-            vTaskDelay(250/portTICK_PERIOD_MS);
+            vTaskDelay(100/portTICK_PERIOD_MS);
           }
         }
         else
@@ -681,13 +779,14 @@ void TaskUnitButton(void *pvParameters)
       unitButtonStat = no_press;
       unitButtonCounter = 0;
     }
-    vTaskDelay(DEBOUNCE_TIME/portTICK_PERIOD_MS);
+    xTaskDelayUntil(&xLastWakeTime, DEBOUNCE_TIME/portTICK_PERIOD_MS);
   }
 }
 
 void TaskAuxButton(void *pvParameters)
 {  
   static uint8_t auxButtonCounter = 0;
+  TickType_t xLastWakeTime;
 
   ( void ) pvParameters;
 
@@ -714,7 +813,7 @@ void TaskAuxButton(void *pvParameters)
           // While user has button held down, don't do anything else
           while(!digitalRead(AUX_BTN))
           {
-            vTaskDelay(250/portTICK_PERIOD_MS);
+            vTaskDelay(100/portTICK_PERIOD_MS);
           }
         }
         else
@@ -736,12 +835,13 @@ void TaskAuxButton(void *pvParameters)
       auxButtonStat = no_press;
       auxButtonCounter = 0;
     }
-    vTaskDelay(DEBOUNCE_TIME/portTICK_PERIOD_MS);
+    xTaskDelayUntil(&xLastWakeTime, DEBOUNCE_TIME/portTICK_PERIOD_MS);
   }
 }
 
 void TaskUpdateWeightReadingLCD(void *pvParameters)
 {
+  TickType_t xLastWakeTime;
   ( void ) pvParameters;
 
   for(;;)
@@ -749,11 +849,6 @@ void TaskUpdateWeightReadingLCD(void *pvParameters)
     if(updateLCDWeight)
     {
       String s_extADCweight;
-
-      extADCweight = (extADCresult - zeroValue)/calValue  - tareValue;
-      if(calUnit == lb && unitVal == kg) extADCweight = extADCweight / kgtolbScalar;
-      else if(calUnit == kg && unitVal == lb) extADCweight = extADCweight * kgtolbScalar;
-      extADCweight = removeNegativeSignFromZero(extADCweight);
 
       //char vBuffer[7];
       //dtostrf(extADCweight,5,2, vBuffer);  // Cannot use printf with floats with small task sizes (<2048) - so do this instead
@@ -765,7 +860,7 @@ void TaskUpdateWeightReadingLCD(void *pvParameters)
       // Split string at the decimal point because display looks strange with large decimal point spacing
 
       // Print decimal point first
-      u8g2.setCursor(WVAL_X_POS-u8g2.getStrWidth(s_extADCweight.substring(s_extADCweight.length()-WVAL_DEC_PLS).c_str())-DEC_PT_S_PX+((DEC_PT_S_PX-DEC_PT_W_PX)/2)-DEC_PT_W_PX, WVAL_Y_POS);
+      u8g2.setCursor(WVAL_X_POS-u8g2.getStrWidth(s_extADCweight.substring(s_extADCweight.length()-WVAL_DEC_PLS).c_str())-DEC_PT_S_PX+((DEC_PT_S_PX-DEC_PT_W_PX)/2)-DEC_PT_W_PX-1, WVAL_Y_POS);
       u8g2.print(".");
 
       // Print numbers left of the deicmal place
@@ -780,15 +875,29 @@ void TaskUpdateWeightReadingLCD(void *pvParameters)
       u8g2.setCursor(UNIT_X_POS, UNIT_Y_POS);
       
       u8g2.print(unitAbbr[unitVal]);
+
+      // Print battery indicator
+      u8g2.drawFrame(BAT_IND_X_POS, BAT_IND_Y_POS, BAT_IND_WIDTH - BAT_BUMP_WIDTH, BAT_IND_HEIGHT);
+      u8g2.drawFrame(BAT_IND_X_POS + BAT_IND_WIDTH - BAT_BUMP_WIDTH, BAT_IND_Y_POS + BAT_IND_HEIGHT/2 - BAT_BUMP_HEIGHT/2, BAT_IND_X_POS - BAT_BUMP_WIDTH, BAT_BUMP_WIDTH);  
+      u8g2.drawBox(BAT_IND_X_POS, BAT_IND_Y_POS, convertBattVtoBarPx(vinVolts), BAT_IND_HEIGHT);
+
       sendBufferSPISafe();
     }
-    vTaskDelay(250/portTICK_PERIOD_MS);
+    xTaskDelayUntil(&xLastWakeTime, LCD_UPDATE_DELAY/portTICK_PERIOD_MS);
   }
+}
+
+uint8_t convertBattVtoBarPx(float battVolts)
+{
+  float barPx = BATV_TO_BAR(battVolts);
+  if (barPx > 12) barPx = 12;
+  if (barPx < 0) barPx = 0;
+  return (uint8_t)barPx;
 }
 
 void drawLogo(void)
 {
-  u8g2.drawXBM(6, 12, penner_logo_width, penner_logo_height, penner_logo_bits);
+  u8g2.drawXBM(LOGO_X_POS, LOGO_Y_POS, LOGO_WIDTH, LOGO_HEIGHT, penner_logo_bits);
 }
 
 void doCalibration()
@@ -798,18 +907,18 @@ void doCalibration()
   vTaskDelay(500/portTICK_PERIOD_MS); // Delay to allow LCD update task to finish and read updateLCDWeight flag
   u8g2.clearBuffer();
   u8g2.setFont(MSG_FONT);
-  u8g2.setCursor(0, 20);
+  u8g2.setCursor(0, USER_MSG_Y_POS);
   u8g2.print("--Scale Calibration--"); 
-  u8g2.setCursor(0, 30);
+  u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
   u8g2.print("Press ZERO to cont.");
-  u8g2.setCursor(0, 40);
+  u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT * 2);
   u8g2.print("Press UNIT to exit.");
   sendBufferSPISafe();
 
   // Allow user to release buttons before proceeding
   while (powerButtonFlag != no_press_flag || unitButtonFlag != no_press_flag)
   {
-    vTaskDelay(25/portTICK_PERIOD_MS);
+    vTaskDelay(DEBOUNCE_TIME/portTICK_PERIOD_MS);
   }
 
   // Reset button flags
@@ -819,7 +928,7 @@ void doCalibration()
   // Wait for user to press a button
   while (powerButtonFlag == no_press_flag && unitButtonFlag == no_press_flag)
   {
-    vTaskDelay(25/portTICK_PERIOD_MS);
+    vTaskDelay(DEBOUNCE_TIME/portTICK_PERIOD_MS);
   }
 
   if(unitButtonFlag != no_press_flag)
@@ -840,18 +949,18 @@ void doCalibration()
   // Set calibration units
   calUnit = unitVal;
   u8g2.clearBuffer();
-  u8g2.setCursor(0, 20);
+  u8g2.setCursor(0, USER_MSG_Y_POS);
   u8g2.print("Press UNIT to select"); 
-  u8g2.setCursor(0, 30);
+  u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
   u8g2.printf("calibration units: %s", unitAbbr[calUnit]);
-  u8g2.setCursor(0, 40);
+  u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT * 2);
   u8g2.print("Press ZERO to cont.");
   sendBufferSPISafe();
 
   // Allow user to release ZERO before proceeding
   while (powerButtonFlag != no_press_flag)
   {
-    vTaskDelay(25/portTICK_PERIOD_MS);
+    vTaskDelay(DEBOUNCE_TIME/portTICK_PERIOD_MS);
   }
 
   // Wait for user to press ZERO
@@ -865,12 +974,12 @@ void doCalibration()
       unitButtonFlag = no_press_flag;
       if(calUnit == kg) calUnit = lb;
       else if(calUnit == lb) calUnit = kg; 
-      u8g2.setCursor(0, 30);
+      u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
       u8g2.printf("calibration units: %s", unitAbbr[calUnit]); 
       sendBufferSPISafe();
     }
 
-    vTaskDelay(25/portTICK_PERIOD_MS);
+    vTaskDelay(DEBOUNCE_TIME/portTICK_PERIOD_MS);
   }
 
   // Reset button flag
@@ -878,11 +987,11 @@ void doCalibration()
 
   // Set calibration weight
   u8g2.clearBuffer();
-  u8g2.setCursor(0, 20);
+  u8g2.setCursor(0, USER_MSG_Y_POS);
   u8g2.print("Press * / UNIT to set");
-  u8g2.setCursor(0, 30);  
+  u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);  
   u8g2.printf("cal. weight: %5u %s", calWeight, unitAbbr[calUnit]);
-  u8g2.setCursor(0, 40);
+  u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT * 2);
   u8g2.print("Press ZERO to cont.");
   sendBufferSPISafe();
 
@@ -901,7 +1010,7 @@ void doCalibration()
       {
         if (calWeight < (MAX_CAL_VAL)) calWeight ++;
       } 
-      u8g2.setCursor(0, 30);  
+      u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);  
       u8g2.printf("cal. weight: %5u %s", calWeight, unitAbbr[calUnit]); 
       sendBufferSPISafe();
     } 
@@ -917,11 +1026,11 @@ void doCalibration()
       {
         if (calWeight > MIN_CAL_VAL) calWeight --;
       } 
-      u8g2.setCursor(0, 30);  
+      u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);  
       u8g2.printf("cal. weight: %5u %s", calWeight, unitAbbr[calUnit]); 
       sendBufferSPISafe();
     }
-    vTaskDelay(100/portTICK_PERIOD_MS);
+    vTaskDelay(150/portTICK_PERIOD_MS);
   }
 
   // Commit calWeight and calUnit to EEPROM
@@ -935,16 +1044,16 @@ void doCalibration()
   auxButtonFlag = no_press_flag;
 
   u8g2.clearBuffer();
-  u8g2.setCursor(0, 20);
+  u8g2.setCursor(0, USER_MSG_Y_POS);
   u8g2.print("--Scale Calibration--");
-  u8g2.setCursor(0, 30);  
+  u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);  
   u8g2.print("Unload scale then");
-  u8g2.setCursor(0, 40);
+  u8g2.setCursor(0, USER_MSG_Y_POS + 2 * USER_MSG_Y_LINE_HEIGHT);
   u8g2.print("press ZERO.");
   sendBufferSPISafe();
   while (powerButtonFlag == no_press_flag)
   {
-    vTaskDelay(25/portTICK_PERIOD_MS);
+    vTaskDelay(DEBOUNCE_TIME/portTICK_PERIOD_MS);
   }
 
   // Reset button flags
@@ -952,35 +1061,35 @@ void doCalibration()
   unitButtonFlag = no_press_flag;
 
   u8g2.clearBuffer();
-  u8g2.setCursor(0, 20);
+  u8g2.setCursor(0, USER_MSG_Y_POS);
   u8g2.print("--Scale Calibration--");  
-  u8g2.setCursor(0, 30);
+  u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
   u8g2.printf("Wait.");
   sendBufferSPISafe();
   delay(1000);
-  u8g2.setCursor(0, 30);
+  u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
   u8g2.printf("Wait..");
   sendBufferSPISafe();
   delay(1000);
-  u8g2.setCursor(0, 30);
+  u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
   u8g2.printf("Wait...");
   sendBufferSPISafe();
   delay(1000);
 
   // Store zero
-  zeroValue = extADCresult;
+  zeroValue = extADCResult;
 
   u8g2.clearBuffer();
-  u8g2.setCursor(0, 20);
+  u8g2.setCursor(0, USER_MSG_Y_POS);
   u8g2.print("--Scale Calibration--");
-  u8g2.setCursor(0, 30);  
+  u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);  
   u8g2.printf("Load %d %s then press", calWeight, unitAbbr[calUnit]);
-  u8g2.setCursor(0, 40);
+  u8g2.setCursor(0, USER_MSG_Y_POS + 2 * USER_MSG_Y_LINE_HEIGHT);
   u8g2.print("ZERO.");
   sendBufferSPISafe();
   while (powerButtonFlag == no_press_flag)
   {
-    vTaskDelay(25/portTICK_PERIOD_MS);
+    vTaskDelay(DEBOUNCE_TIME/portTICK_PERIOD_MS);
   }
 
   // Reset button flags
@@ -988,41 +1097,41 @@ void doCalibration()
   unitButtonFlag = no_press_flag;
   
   u8g2.clearBuffer();
-  u8g2.setCursor(0, 20);
+  u8g2.setCursor(0, USER_MSG_Y_POS);
   u8g2.print("--Scale Calibration--");  
-  u8g2.setCursor(0, 30);
+  u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
   u8g2.printf("Wait.");
   sendBufferSPISafe();
   delay(1000);
-  u8g2.setCursor(0, 30);
+  u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
   u8g2.printf("Wait..");
   sendBufferSPISafe();
   delay(1000);
-  u8g2.setCursor(0, 30);
+  u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
   u8g2.printf("Wait...");
   sendBufferSPISafe();
   delay(1000);  
 
   // Store span
-  calValue = ((float)extADCresult - (float)zeroValue)/(float)calWeight;  
+  calValue = ((float)extADCResult - (float)zeroValue)/(float)calWeight;  
 
-  Serial.printf("extADCresult: %d\n", extADCresult);
+  Serial.printf("extADCResult: %d\n", extADCResult);
   Serial.printf("zeroValue: %d\n", zeroValue);
   Serial.printf("calWeight: %u\n", calWeight);
   Serial.printf("calValue: %f\n", calValue);
   Serial.printf("calUnit: %s\n", unitAbbr[calUnit]);  
 
   u8g2.clearBuffer();
-  u8g2.setCursor(0, 20);
+  u8g2.setCursor(0, USER_MSG_Y_POS);
   u8g2.print("Cal done. Press ZERO.");  
-  u8g2.setCursor(0, 30);  
+  u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);  
   u8g2.printf("Zero: %d\n\r", zeroValue);
-  u8g2.setCursor(0, 40);
+  u8g2.setCursor(0, USER_MSG_Y_POS + 2 * USER_MSG_Y_LINE_HEIGHT);
   u8g2.printf("Span: %f\n\r", calValue);  
   sendBufferSPISafe();
   while (powerButtonFlag == no_press_flag)
   {
-    vTaskDelay(25/portTICK_PERIOD_MS);
+    vTaskDelay(DEBOUNCE_TIME/portTICK_PERIOD_MS);
   }  
 
   // Newly calibrated scale - do not need tare
@@ -1044,6 +1153,7 @@ void sendBufferSPISafe(void)
   if (xSemaphoreTake(SPImutex, ( TickType_t ) 25) == pdTRUE) // enter critical section
   {
     SPI.begin(SCLK, MISO, MOSI, LCD_CS);
+    SPI.setFrequency(SPI_FREQ);
     u8g2.initInterface();
     u8g2.sendBuffer();
     SPI.end();
@@ -1058,9 +1168,11 @@ void sendBufferSPISafe(void)
 void powerDown(void)
 {
   updateLCDWeight = false;
+  EEPROM.put(unitVal_eepromAdress, unitVal);
+  EEPROM.put(backlightEnable_eepromAdress, backlightEnable);
   EEPROM.commit();  // Save our settings to EEPROM
   // Disable LCD backlight, clear LCD, power down
-  digitalWrite(LCD_BACKLIGHT, LOW);
+  ledcWrite(LCD_BACKLIGHT, 0);
   u8g2.clearBuffer();
   sendBufferSPISafe();
   u8g2.setPowerSave(true);
@@ -1076,3 +1188,12 @@ float removeNegativeSignFromZero(float weightValue)
   if((weightValue < precision) && (weightValue > -precision)) weightValue = 0;
   return weightValue;
 }
+
+//  https://github.com/G6EJD/ESP32-ADC-Accuracy-Improvement-function
+float analogReadVoltage(byte pin){
+  float reading = analogRead(pin); // Reference voltage is 3v3 so maximum reading is 3v3 = 4095 in range 0 to 4095
+  if(reading < 1 || reading > 4095) return 0;
+  // return -0.000000000009824 * pow(reading,3) + 0.000000016557283 * pow(reading,2) + 0.000854596860691 * reading + 0.065440348345433;
+  // return -0.000000000000016 * pow(reading,4) + 0.000000000118171 * pow(reading,3)- 0.000000301211691 * pow(reading,2)+ 0.001109019271794 * reading + 0.034143524634089 - 0.09;
+  return(-0.000000000023926 * pow(reading,3) + 0.000000094746 * pow(reading,2) + 0.00074539 * reading);
+} // Added an improved polynomial, use either, comment out as required
