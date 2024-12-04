@@ -27,7 +27,7 @@
 // User
 #define PWR_ZERO_BTN 19
 #define UNIT_BTN 20
-#define AUX_BTN 21
+#define BKL_UP_BTN 21
 
 // Power
 #define V3V3_EN 2
@@ -94,6 +94,7 @@ const float  PWR_5V_LVL_VDIV_SCLR = (1/0.5); // // Multiply ADC Volts by this sc
 #define UNIT_FONT u8g2_font_7x13B_mr
 #define MSG_FONT u8g2_font_6x12_mr
 #define LCD_UPDATE_DELAY 333
+#define LCD_CONTRAST 60
 
 // LCD battery indicator formatting constants
 #define BAT_IND_WIDTH 14
@@ -209,12 +210,12 @@ const int calUnit_eepromAdress = calWeight_eepromAdress + sizeof(calWeight);
 enum e_buttonStat {no_press = 0, is_pressed = 1, short_press = 2, long_press = 3};
 e_buttonStat powerButtonStat = no_press;  // Used to track immediate button status
 e_buttonStat unitButtonStat = no_press;  // Used to track immediate button status
-e_buttonStat auxButtonStat = no_press;  // Used to track immediate button status
+e_buttonStat bklButtonStat = no_press;  // Used to track immediate button status
 
 enum e_buttonFlag {no_press_flag = 0, short_press_flag = 1, long_press_flag = 2};
 e_buttonFlag powerButtonFlag = no_press_flag;  // Used to alert other tasks of a button event - cleared by UI task
 e_buttonFlag unitButtonFlag = no_press_flag; // Used to alert other tasks of a button event - cleared by UI task
-e_buttonFlag auxButtonFlag = no_press_flag; // Used to alert other tasks of a button event - cleared by UI task
+e_buttonFlag bklButtonFlag = no_press_flag; // Used to alert other tasks of a button event - cleared by UI task
 
 long debounceTime = 200;
 
@@ -223,7 +224,7 @@ TaskHandle_t xHandleTaskIntAnalogRead = NULL;
 TaskHandle_t xHandleTaskUpdateWeightLCD = NULL;
 TaskHandle_t xHandleTaskPowerZeroButton = NULL;
 TaskHandle_t xHandleTaskUnitButton = NULL;
-TaskHandle_t xHandleTaskAuxButton = NULL;
+TaskHandle_t xHandleTaskBKLButton = NULL;
 TaskHandle_t xHandleTaskUI = NULL;
 
 // The setup function runs once when you press reset or power on the board.
@@ -269,7 +270,7 @@ void setup() {
   // User buttons
   pinMode(PWR_ZERO_BTN, INPUT);
   pinMode(UNIT_BTN, INPUT);
-  pinMode(AUX_BTN, INPUT);
+  pinMode(BKL_UP_BTN, INPUT);
 
   // Set SPI directions
   pinMode(MOSI, OUTPUT);
@@ -321,7 +322,7 @@ void setup() {
   // Start LCD
   u8g2.begin();
   // Set contrast
-  u8g2.setContrast(65);
+  u8g2.setContrast(LCD_CONTRAST);
   // Display logo
   u8g2.clearBuffer();
   drawLogo();
@@ -464,12 +465,12 @@ void setup() {
     );
 
     xTaskCreatePinnedToCore(
-    TaskAuxButton
+    TaskBKLButton
     ,  "Check Aux Button"
     ,  2048  // Stack size
     ,  NULL  // When no parameter is used, simply pass NULL
     ,  4  // Priority
-    ,  &xHandleTaskAuxButton // With task handle we will be able to manipulate with this task.
+    ,  &xHandleTaskBKLButton // With task handle we will be able to manipulate with this task.
     ,  ARDUINO_RUNNING_CORE // Core on which the task will run
     );    
 
@@ -509,33 +510,13 @@ void TaskUI(void *pvParameters)
       tareValue = (extADCResult - zeroValue)/calValue;
       Serial.printf("Tare Value: %f\n", tareValue);
     }
-    else if (powerButtonFlag == long_press_flag)
+    else if (powerButtonFlag == long_press_flag && bklButtonStat == no_press && unitButtonStat == no_press)
     {
-      if(unitButtonStat == is_pressed || unitButtonFlag == long_press_flag)
-      {
-        // We've received a press with power button reaching the long press status first.
-        // If both buttons have reached long press status, execute task.
-        // Otherwise come back and check if unit button has reached long press status.
-        // Note this is 1 of 2 places where this can occur...
-        // The other is in the unit button tests below.
-
-        if(unitButtonFlag == long_press_flag)
-        {
-          // Both buttons have reached long-press status.  Execute double long-press task.
-          powerButtonFlag = no_press_flag;
-          unitButtonFlag = no_press_flag;
-          Serial.printf("Calibrate flag set.\n");
-          doCalibration();
-        }
-
-      }
-      else
-      {
-        // Do power down
-        Serial.printf("Power down flag set.\n");
-        powerButtonFlag = no_press_flag;
-        powerDown();
-      }
+      // Do long power button press task
+      // Do power down
+      Serial.printf("Power down flag set.\n");
+      powerButtonFlag = no_press_flag;
+      powerDown();    
     }
 
     // Check unit button flag
@@ -549,7 +530,7 @@ void TaskUI(void *pvParameters)
     }
     else if (unitButtonFlag == long_press_flag)
     {
-      if(powerButtonStat == is_pressed || powerButtonFlag == long_press_flag)
+      if(bklButtonStat == is_pressed || bklButtonFlag == long_press_flag)
       {
         // We've received a press with power button reaching the long press status first.
         // If both buttons have reached long press status, execute task.
@@ -557,38 +538,62 @@ void TaskUI(void *pvParameters)
         // Note this is 1 of 2 places where this can occur...
         // The other is in the power button tests above.
 
-        if(powerButtonFlag == long_press_flag)
+        if(bklButtonFlag == long_press_flag)
         {
           // Both buttons have reached long-press status.  Execute double long-press task.
-          powerButtonFlag = no_press_flag;
+          bklButtonFlag = no_press_flag;
           unitButtonFlag = no_press_flag;
           Serial.printf("Calibrate flag set.\n");
+          doCalibration();
         }
       }
       else
       {
-        // Cycle backlight setting
-        if(backlightEnable == off) backlightEnable = on;
-        else if(backlightEnable == on) backlightEnable = off;
-        //else if(backlightEnable == on) backlightEnable = on_motion;
-        //else if(backlightEnable == on_motion) backlightEnable = off;        
-        Serial.printf("Backlight toggle flag set. Backlight = %d\n", backlightEnable);
-        ledcWrite(LCD_BACKLIGHT, backlightPWM * backlightEnable);
+        // Do unit button long press action
         unitButtonFlag = no_press_flag;
       }
     }
 
-    // Check aux button flag
-    if (auxButtonFlag == short_press_flag)
+    // Check bkl button flag
+    if (bklButtonFlag == short_press_flag)
     {
-      // Do aux button short press action
-      auxButtonFlag = no_press_flag;
+      // Do bkl button short press action and reset flag
+      bklButtonFlag = no_press_flag;
+
+      // Cycle backlight setting
+      if(backlightEnable == off) backlightEnable = on;
+      else if(backlightEnable == on) backlightEnable = off;
+      //else if(backlightEnable == on) backlightEnable = on_motion;
+      //else if(backlightEnable == on_motion) backlightEnable = off;        
+      Serial.printf("Backlight toggle flag set. Backlight = %d\n", backlightEnable);
+      ledcWrite(LCD_BACKLIGHT, backlightPWM * backlightEnable);
 
     }
-    else if(auxButtonFlag == long_press_flag)
+    else if(bklButtonFlag == long_press_flag)
     {
-      // Do aux button long press action
-      auxButtonFlag = no_press_flag;
+      if(unitButtonStat == is_pressed || unitButtonFlag == long_press_flag)
+      {
+        // We've received a press with bkl button reaching the long press status first.
+        // If both buttons have reached long press status, execute task.
+        // Otherwise come back and check if unit button has reached long press status.
+        // Note this is 1 of 2 places where this can occur...
+        // The other is in the unit button tests above.
+
+        if(unitButtonFlag == long_press_flag)
+        {
+          // Both buttons have reached long-press status.  Execute double long-press task.
+          bklButtonFlag = no_press_flag;
+          unitButtonFlag = no_press_flag;
+          Serial.printf("Calibrate flag set.\n");
+          doCalibration();
+        }
+
+      }
+      else
+      {
+        // Do bkl button long press action
+        bklButtonFlag = no_press_flag;
+      }
     }
     xTaskDelayUntil(&xLastWakeTime, 25/portTICK_PERIOD_MS);
   }
@@ -783,9 +788,9 @@ void TaskUnitButton(void *pvParameters)
   }
 }
 
-void TaskAuxButton(void *pvParameters)
+void TaskBKLButton(void *pvParameters)
 {  
-  static uint8_t auxButtonCounter = 0;
+  static uint8_t bklButtonCounter = 0;
   TickType_t xLastWakeTime;
 
   ( void ) pvParameters;
@@ -794,24 +799,24 @@ void TaskAuxButton(void *pvParameters)
   {
     
     // Check aux button
-    if(!digitalRead(AUX_BTN))
+    if(!digitalRead(BKL_UP_BTN))
     {
-      if(auxButtonStat == is_pressed)
+      if(bklButtonStat == is_pressed)
       {
         // Button is still pressed after debounce period so delay for a period of time
-        while((!digitalRead(AUX_BTN)) && auxButtonCounter < LONG_PRESS_COUNT_THRESHOLD)
+        while((!digitalRead(BKL_UP_BTN)) && bklButtonCounter < LONG_PRESS_COUNT_THRESHOLD)
         {
           vTaskDelay(LONG_PRESS_LOOP_DELAY/portTICK_PERIOD_MS);
-          auxButtonCounter++;
+          bklButtonCounter++;
         }
-        if(auxButtonCounter >= LONG_PRESS_COUNT_THRESHOLD)
+        if(bklButtonCounter >= LONG_PRESS_COUNT_THRESHOLD)
         {
           // Long-press detected
-          auxButtonStat = long_press;
-          auxButtonFlag = long_press_flag;
-          Serial.printf("Long aux button press.\n");
+          bklButtonStat = long_press;
+          bklButtonFlag = long_press_flag;
+          Serial.printf("Long backlight button press.\n");
           // While user has button held down, don't do anything else
-          while(!digitalRead(AUX_BTN))
+          while(!digitalRead(BKL_UP_BTN))
           {
             vTaskDelay(100/portTICK_PERIOD_MS);
           }
@@ -819,21 +824,21 @@ void TaskAuxButton(void *pvParameters)
         else
         {
           // Short press detected
-          auxButtonStat = short_press;
-          auxButtonFlag = short_press_flag;
-          Serial.printf("Short aux button press.\n");
+          bklButtonStat = short_press;
+          bklButtonFlag = short_press_flag;
+          Serial.printf("Short backlight button press.\n");
         }
       }
       else
       {
         // Fresh button press event detected
-        auxButtonStat = is_pressed;
+        bklButtonStat = is_pressed;
       }
     }
     else
     {
-      auxButtonStat = no_press;
-      auxButtonCounter = 0;
+      bklButtonStat = no_press;
+      bklButtonCounter = 0;
     }
     xTaskDelayUntil(&xLastWakeTime, DEBOUNCE_TIME/portTICK_PERIOD_MS);
   }
@@ -998,9 +1003,9 @@ void doCalibration()
 // Wait for user to press ZERO
   while (powerButtonFlag == no_press_flag)
   {
-    if (auxButtonStat)
+    if (bklButtonStat)
     {
-      if (auxButtonStat == long_press)
+      if (bklButtonStat == long_press)
       {
         // User is holding down the button
         if (calWeight < (MAX_CAL_VAL-10)) calWeight += 10;
@@ -1041,7 +1046,7 @@ void doCalibration()
   // Reset button flags
   powerButtonFlag = no_press_flag;
   unitButtonFlag = no_press_flag;
-  auxButtonFlag = no_press_flag;
+  bklButtonFlag = no_press_flag;
 
   u8g2.clearBuffer();
   u8g2.setCursor(0, USER_MSG_Y_POS);
