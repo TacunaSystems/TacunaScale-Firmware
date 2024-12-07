@@ -92,7 +92,7 @@ const float  PWR_5V_LVL_VDIV_SCLR = (1/0.5); // // Multiply ADC Volts by this sc
 #define DEC_PT_S_PX 7  // Space generated between numbers to allow for decimal point in px (usually ~1.5x dec pt width)
 #define WVAL_FONT u8g2_font_inb21_mn
 #define UNIT_FONT u8g2_font_7x13B_mr
-#define MSG_FONT u8g2_font_6x12_mr
+#define MSG_FONT u8g2_font_6x12_m_symbols
 #define LCD_UPDATE_DELAY 333
 #define LCD_CONTRAST 60
 
@@ -189,7 +189,7 @@ const uint8_t backlightPWM = 80;
 enum e_unitVal {kg = 0, lb = 1};
 e_unitVal unitVal = DEFAULT_UNIT;
 
-float calValue = 429.4967296f; // default global calibration value (results in uV at 5Vexc and 128x gain)
+float calValue = 7168.220215f; // default global calibration value (429.4967296f results in uV at 5Vexc and 128x gain, 7168.220215f gets close to the dual load cell setup)
 int32_t zeroValue = 0; // default zero value
 float tareValue = 0.0f; // default tare value
 uint32_t calWeight = MIN_CAL_VAL; // default calibration weight
@@ -255,6 +255,7 @@ void setup() {
   // Disable LCD backlight
   pinMode(LCD_BACKLIGHT, OUTPUT);
   digitalWrite(LCD_BACKLIGHT, LOW);
+
   // Configure LED PWM
   ledcAttach(LCD_BACKLIGHT, backlightPWMfreq, backlightPWMres);
   ledcWrite(LCD_BACKLIGHT, 0);
@@ -993,7 +994,13 @@ void doCalibration()
   // Set calibration weight
   u8g2.clearBuffer();
   u8g2.setCursor(0, USER_MSG_Y_POS);
-  u8g2.print("Press * / UNIT to set");
+  u8g2.print("Press ");
+  u8g2.drawGlyph(u8g2.getCursorX(), u8g2.getCursorY(), 0x25e0); // Up arrow
+  u8g2.setCursor (u8g2.getCursorX() + u8g2.getMaxCharWidth(), u8g2.getCursorY());
+  u8g2.print(" or ");
+  u8g2.drawGlyph(u8g2.getCursorX(), u8g2.getCursorY(), 0x25e1);   // Down arrow
+  u8g2.setCursor (u8g2.getCursorX() + u8g2.getMaxCharWidth(), u8g2.getCursorY());
+  u8g2.print(" to set");
   u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);  
   u8g2.printf("cal. weight: %5u %s", calWeight, unitAbbr[calUnit]);
   u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT * 2);
