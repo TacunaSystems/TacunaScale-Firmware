@@ -47,9 +47,9 @@
 #define MOSI 11
 #define EXT_ADC_CS 10
 #define EXT_ADC_AVG_NUM 20
-#define EXT_ANALOG_READ_TASK_DELAY 600
+#define EXT_ANALOG_READ_TASK_DELAY 500
 #define EXT_ANALOG_SETTLING_TIME 50
-#define NO_ACTIVITY_THRESHOLD_TASK_WAKES 60000/EXT_ANALOG_READ_TASK_DELAY  // Multiples of EXT_ANALOG_READ_TASK_DELAY eg. 600*500ms = 5 minutes or 1200*250ms = 5 minutes
+#define NO_ACTIVITY_THRESHOLD_MS 300000/EXT_ANALOG_READ_TASK_DELAY  // 5minutes*60seconds*1000=300,000ms for 5 minute timeout
 #define NO_ACTIVITY_WEIGHT_RANGE_LB 5
 #define EXT_ADC_RATE 32
 
@@ -378,11 +378,11 @@ void setup() {
     AD7193.enableBuffer(true);
     AD7193.rangeSetup(1, AD7193_CONF_GAIN_128);
     AD7193.setBPDSW(true);
+    delay(500);
     Serial.println(F("AD7193 Initialized!"));
     AD7193.channelSelect(AD7193_CONF_CHAN(AD7193_CH_0));
     AD7193.waitReady();
     delay(EXT_ANALOG_SETTLING_TIME*3);
-    AD7193.waitReady();
     extADCResultCh0 = AD7193.continuousReadAverage(EXT_ADC_AVG_NUM);
     Serial.printf("ADC Ch0 Result Avg: %d\n", extADCResultCh0);
     AD7193.channelSelect(AD7193_CONF_CHAN(AD7193_CH_1));
@@ -392,9 +392,6 @@ void setup() {
 
     extADCResultCh1 = AD7193.continuousReadAverage(EXT_ADC_AVG_NUM);
     Serial.printf("ADC Ch1 Result Avg: %d\n", extADCResultCh1);    
-
-    AD7193.channelSelect(AD7193_CONF_CHAN(AD7193_CH_1));
-    delay(EXT_ANALOG_SETTLING_TIME*2);
 
     // If DIP switch 1 is off (logic high), then scale is configured for single channel.  Otherwise use both channels.
     if(configSwitch1) extADCResult = extADCResultCh0; else extADCResult = extADCResultCh0 + extADCResultCh1;
@@ -610,7 +607,6 @@ void TaskUI(void *pvParameters)
 void TaskExtAnalogRead(void *pvParameters)
 {
   ( void ) pvParameters;
-  TickType_t xLastWakeTime;
   static uint32_t taskWakesSinceWeightChange = 0;
   static float lastExtADCweight = 0; 
   static float weightChangeLB = 0; 
@@ -644,7 +640,7 @@ void TaskExtAnalogRead(void *pvParameters)
     weightChangeLB = abs(lastExtADCweight - extADCweight);
     if(unitVal == kg) weightChangeLB = (weightChangeLB * kgtolbScalar);
     if(weightChangeLB > NO_ACTIVITY_WEIGHT_RANGE_LB) taskWakesSinceWeightChange = 0; else taskWakesSinceWeightChange++;
-    if(taskWakesSinceWeightChange > NO_ACTIVITY_THRESHOLD_TASK_WAKES)
+    if(taskWakesSinceWeightChange > NO_ACTIVITY_THRESHOLD_MS)
     {
       noActivityPowerDownFlag = true;
       Serial.println("No activity - power down.");
@@ -654,8 +650,6 @@ void TaskExtAnalogRead(void *pvParameters)
     {
       noActivityPowerDownFlag = false;
     }
-
-    //xTaskDelayUntil(&xLastWakeTime, EXT_ANALOG_READ_TASK_DELAY/portTICK_PERIOD_MS);
     vTaskDelay(EXT_ANALOG_READ_TASK_DELAY/portTICK_PERIOD_MS);
   }
 }
@@ -1186,7 +1180,7 @@ void sendBufferSPISafe(void)
   }
   else
   {
-    Serial.println("Couldn't take SPI mutex.");
+    //Serial.println("Couldn't take SPI mutex.");
   }
 }
 
