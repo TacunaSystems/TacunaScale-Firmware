@@ -47,9 +47,11 @@
 #define MOSI 11
 #define EXT_ADC_CS 10
 #define EXT_ADC_AVG_NUM 20
-#define EXT_ANALOG_READ_DELAY 333
-#define NO_ACTIVITY_THRESHOLD_TASK_WAKES 1200  // Multiples of EXT_ANALOG_READ_DELAY eg. 600*500ms = 5 minutes or 1200*250ms = 5 minutes
+#define EXT_ANALOG_READ_TASK_DELAY 500
+#define EXT_ANALOG_SETTLING_TIME 50
+#define NO_ACTIVITY_THRESHOLD_MS 300000/EXT_ANALOG_READ_TASK_DELAY  // 5minutes*60seconds*1000=300,000ms for 5 minute timeout
 #define NO_ACTIVITY_WEIGHT_RANGE_LB 5
+#define EXT_ADC_RATE 32
 
 // Config Switch
 #define SW_1 8
@@ -369,22 +371,24 @@ void setup() {
   } else {
     AD7193.printAllRegisters();
     AD7193.setClockMode(AD7193_CLK_INT);
-    AD7193.setRate(0x001);
+    AD7193.setRate(EXT_ADC_RATE);
     AD7193.setFilter(AD7193_MODE_SINC4);
-    AD7193.enableNotchFilter(false);
+    AD7193.enableNotchFilter(true);
     AD7193.enableChop(false);
     AD7193.enableBuffer(true);
     AD7193.rangeSetup(1, AD7193_CONF_GAIN_128);
     AD7193.setBPDSW(true);
-    AD7193.channelSelect(AD7193_CH_0);
+    delay(500);
     Serial.println(F("AD7193 Initialized!"));
-    delay(250);
-
+    AD7193.channelSelect(AD7193_CONF_CHAN(AD7193_CH_0));
+    AD7193.waitReady();
+    delay(EXT_ANALOG_SETTLING_TIME*3);
     extADCResultCh0 = AD7193.continuousReadAverage(EXT_ADC_AVG_NUM);
     Serial.printf("ADC Ch0 Result Avg: %d\n", extADCResultCh0);
-
-    AD7193.channelSelect(AD7193_CH_1);
-    delay(5);
+    AD7193.channelSelect(AD7193_CONF_CHAN(AD7193_CH_1));
+    AD7193.waitReady();
+    delay(EXT_ANALOG_SETTLING_TIME*3);
+    AD7193.waitReady();
 
     extADCResultCh1 = AD7193.continuousReadAverage(EXT_ADC_AVG_NUM);
     Serial.printf("ADC Ch1 Result Avg: %d\n", extADCResultCh1);    
@@ -438,7 +442,7 @@ void setup() {
   xTaskCreatePinnedToCore(
     TaskExtAnalogRead
     ,  "Ext ADC Task" // A name just for humans
-    ,  2048        // The stack size can be checked by calling `uxHighWaterMark = uxTaskGetStackHighWaterMark(NULL);`
+    ,  4096        // The stack size can be checked by calling `uxHighWaterMark = uxTaskGetStackHighWaterMark(NULL);`
     ,  NULL // Task parameter which can modify the task behavior. This must be passed as pointer to void.
     ,  3  // Priority
     ,  &xHandleTaskExtAnalogRead
@@ -603,7 +607,6 @@ void TaskUI(void *pvParameters)
 void TaskExtAnalogRead(void *pvParameters)
 {
   ( void ) pvParameters;
-  TickType_t xLastWakeTime;
   static uint32_t taskWakesSinceWeightChange = 0;
   static float lastExtADCweight = 0; 
   static float weightChangeLB = 0; 
@@ -613,12 +616,16 @@ void TaskExtAnalogRead(void *pvParameters)
     xSemaphoreTake(SPImutex, portMAX_DELAY); // enter critical section
     SPI.begin(SCLK, MISO, MOSI, EXT_ADC_CS);
     SPI.setFrequency(SPI_FREQ);
-    AD7193.channelSelect(AD7193_CH_0);
-    vTaskDelay(5/portTICK_PERIOD_MS);
+    AD7193.channelSelect(AD7193_CONF_CHAN(AD7193_CH_0));
+    vTaskDelay(EXT_ANALOG_SETTLING_TIME);
+    AD7193.waitReady();
     extADCResultCh0 = AD7193.continuousReadAverage(EXT_ADC_AVG_NUM);
-    AD7193.channelSelect(AD7193_CH_1);
-    vTaskDelay(5/portTICK_PERIOD_MS);
+    //Serial.printf("extADCweight0: %d\n", extADCResultCh0);
+    AD7193.channelSelect(AD7193_CONF_CHAN(AD7193_CH_1));
+    vTaskDelay(EXT_ANALOG_SETTLING_TIME);
+    AD7193.waitReady();
     extADCResultCh1 = AD7193.continuousReadAverage(EXT_ADC_AVG_NUM);
+    //Serial.printf("extADCweight1: %d\n", extADCResultCh1);
     SPI.end();
     xSemaphoreGive(SPImutex); // exit critical section
       
@@ -628,11 +635,12 @@ void TaskExtAnalogRead(void *pvParameters)
     if(calUnit == lb && unitVal == kg) extADCweight = extADCweight / kgtolbScalar;
     else if(calUnit == kg && unitVal == lb) extADCweight = extADCweight * kgtolbScalar;
     extADCweight = removeNegativeSignFromZero(extADCweight);
+    //Serial.printf("extADCweight: %f\n", extADCweight);
 
     weightChangeLB = abs(lastExtADCweight - extADCweight);
     if(unitVal == kg) weightChangeLB = (weightChangeLB * kgtolbScalar);
     if(weightChangeLB > NO_ACTIVITY_WEIGHT_RANGE_LB) taskWakesSinceWeightChange = 0; else taskWakesSinceWeightChange++;
-    if(taskWakesSinceWeightChange > NO_ACTIVITY_THRESHOLD_TASK_WAKES)
+    if(taskWakesSinceWeightChange > NO_ACTIVITY_THRESHOLD_MS)
     {
       noActivityPowerDownFlag = true;
       Serial.println("No activity - power down.");
@@ -642,8 +650,7 @@ void TaskExtAnalogRead(void *pvParameters)
     {
       noActivityPowerDownFlag = false;
     }
-
-    xTaskDelayUntil(&xLastWakeTime, EXT_ANALOG_READ_DELAY/portTICK_PERIOD_MS);
+    vTaskDelay(EXT_ANALOG_READ_TASK_DELAY/portTICK_PERIOD_MS);
   }
 }
 
@@ -658,14 +665,14 @@ void TaskIntAnalogRead(void *pvParameters)
     //sensorValue = analogRead(VIN_LVL_PIN)*PWR_VIN_LVL_COUNTS_TO_V*INT_ADC_M_VAL+INT_ADC_B_VAL;
     vinVolts = analogReadVoltage(VIN_LVL_PIN)*PWR_VIN_LVL_VDIV_SCLR;
     char vBuffer[6];
-    dtostrf(vinVolts,4,2, vBuffer);  // Cannot use printf with floats with small task sizes (<2048) - so do this instead
+    //dtostrf(vinVolts,4,2, vBuffer);  // Cannot use printf with floats with small task sizes (<2048) - so do this instead
     digitalWrite(VIN_LVL_EN_PIN, LOW);
     // print out the value you read:
-    Serial.printf("Vin: %s\t", vBuffer);
+    //Serial.printf("Vin: %s\t", vBuffer);
     //sensorValue = analogRead(PWR_5V_A_LVL_PIN)*PWR_5V_LVL_COUNTS_TO_V*INT_ADC_M_VAL+INT_ADC_B_VAL;
     v5vVolts = analogReadVoltage(PWR_5V_A_LVL_PIN)*PWR_5V_LVL_VDIV_SCLR;
-    dtostrf(v5vVolts,4,2, vBuffer);
-    Serial.printf("5V_A: %s\n", vBuffer);
+    //dtostrf(v5vVolts,4,2, vBuffer);
+    //Serial.printf("5V_A: %s\n", vBuffer);
     vTaskDelay(INT_ADC_TASK_DELAY/portTICK_PERIOD_MS);
   }
 }
@@ -1173,7 +1180,7 @@ void sendBufferSPISafe(void)
   }
   else
   {
-    Serial.println("Couldn't take SPI mutex.");
+    //Serial.println("Couldn't take SPI mutex.");
   }
 }
 
