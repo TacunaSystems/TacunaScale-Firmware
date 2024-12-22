@@ -366,30 +366,28 @@ void setup() {
   SPI.setFrequency(SPI_FREQ);
   AD7193.setSPI(SPI);
   AD7193.begin();
-  if(0){ //!AD7193.begin()) {
+  if(0){ // !AD7193.begin()) {
     Serial.println(F("AD7193 initialization failed!"));
   } else {
-    AD7193.printAllRegisters();
     AD7193.setClockMode(AD7193_CLK_INT);
     AD7193.setRate(EXT_ADC_RATE);
     AD7193.setFilter(AD7193_MODE_SINC4);
     AD7193.enableNotchFilter(true);
     AD7193.enableChop(false);
     AD7193.enableBuffer(true);
-    AD7193.rangeSetup(1, AD7193_CONF_GAIN_128);
+    AD7193.rangeSetup(0, AD7193_CONF_GAIN_128);
     AD7193.setBPDSW(true);
+    AD7193.printAllRegisters();
     delay(500);
     Serial.println(F("AD7193 Initialized!"));
-    AD7193.channelSelect(AD7193_CONF_CHAN(AD7193_CH_0));
+    AD7193.channelSelect(AD7193_CH_0);
+    vTaskDelay(EXT_ANALOG_SETTLING_TIME);
     AD7193.waitReady();
-    delay(EXT_ANALOG_SETTLING_TIME*3);
     extADCResultCh0 = AD7193.continuousReadAverage(EXT_ADC_AVG_NUM);
     Serial.printf("ADC Ch0 Result Avg: %d\n", extADCResultCh0);
-    AD7193.channelSelect(AD7193_CONF_CHAN(AD7193_CH_1));
+    AD7193.channelSelect(AD7193_CH_1);
+    vTaskDelay(EXT_ANALOG_SETTLING_TIME);
     AD7193.waitReady();
-    delay(EXT_ANALOG_SETTLING_TIME*3);
-    AD7193.waitReady();
-
     extADCResultCh1 = AD7193.continuousReadAverage(EXT_ADC_AVG_NUM);
     Serial.printf("ADC Ch1 Result Avg: %d\n", extADCResultCh1);    
 
@@ -616,12 +614,12 @@ void TaskExtAnalogRead(void *pvParameters)
     xSemaphoreTake(SPImutex, portMAX_DELAY); // enter critical section
     SPI.begin(SCLK, MISO, MOSI, EXT_ADC_CS);
     SPI.setFrequency(SPI_FREQ);
-    AD7193.channelSelect(AD7193_CONF_CHAN(AD7193_CH_0));
+    AD7193.channelSelect(AD7193_CH_0);
     vTaskDelay(EXT_ANALOG_SETTLING_TIME);
     AD7193.waitReady();
     extADCResultCh0 = AD7193.continuousReadAverage(EXT_ADC_AVG_NUM);
     //Serial.printf("extADCweight0: %d\n", extADCResultCh0);
-    AD7193.channelSelect(AD7193_CONF_CHAN(AD7193_CH_1));
+    AD7193.channelSelect(AD7193_CH_1);
     vTaskDelay(EXT_ANALOG_SETTLING_TIME);
     AD7193.waitReady();
     extADCResultCh1 = AD7193.continuousReadAverage(EXT_ADC_AVG_NUM);
@@ -1085,15 +1083,15 @@ void doCalibration()
   u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
   u8g2.printf("Wait.");
   sendBufferSPISafe();
-  delay(1000);
+  vTaskDelay(1000/portTICK_PERIOD_MS);
   u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
   u8g2.printf("Wait..");
   sendBufferSPISafe();
-  delay(1000);
+  vTaskDelay(1000/portTICK_PERIOD_MS);
   u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
   u8g2.printf("Wait...");
   sendBufferSPISafe();
-  delay(1000);
+  vTaskDelay(1000/portTICK_PERIOD_MS);
 
   // Store zero
   zeroValue = extADCResult;
@@ -1121,15 +1119,15 @@ void doCalibration()
   u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
   u8g2.printf("Wait.");
   sendBufferSPISafe();
-  delay(1000);
+  vTaskDelay(1000/portTICK_PERIOD_MS);
   u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
   u8g2.printf("Wait..");
   sendBufferSPISafe();
-  delay(1000);
+  vTaskDelay(1000/portTICK_PERIOD_MS);
   u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
   u8g2.printf("Wait...");
   sendBufferSPISafe();
-  delay(1000);  
+  vTaskDelay(1000/portTICK_PERIOD_MS);
 
   // Store span
   calValue = ((float)extADCResult - (float)zeroValue)/(float)calWeight;  
@@ -1169,7 +1167,7 @@ void doCalibration()
 
 void sendBufferSPISafe(void)
 {
-  if (xSemaphoreTake(SPImutex, ( TickType_t ) 25) == pdTRUE) // enter critical section
+  if (xSemaphoreTake(SPImutex, ( TickType_t ) 2000) == pdTRUE) // enter critical section
   {
     SPI.begin(SCLK, MISO, MOSI, LCD_CS);
     SPI.setFrequency(SPI_FREQ);
