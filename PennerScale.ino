@@ -46,12 +46,12 @@
 #define MISO 13
 #define MOSI 11
 #define EXT_ADC_CS 10
-#define EXT_ADC_AVG_NUM 20
-#define EXT_ANALOG_READ_TASK_DELAY 500
-#define EXT_ANALOG_SETTLING_TIME 50
-#define NO_ACTIVITY_THRESHOLD_MS 300000/EXT_ANALOG_READ_TASK_DELAY  // 5minutes*60seconds*1000=300,000ms for 5 minute timeout
+#define EXT_ADC_AVG_NUM 1
+#define NO_ACTIVITY_THRESHOLD_MS 300000/EXT_ANALOG_READ_TASK_DELAY  // 5 minutes * 60 seconds * 1000 = 300,000ms for 5 minute timeout
 #define NO_ACTIVITY_WEIGHT_RANGE_LB 5
-#define EXT_ADC_RATE 32
+#define EXT_ADC_RATE 150  // 150 = 4Hz (based on settling time), 120 = 5Hz, 100=6Hz, 85=7Hz.  
+#define EXT_ANALOG_SETTLING_TIME (EXT_ADC_RATE * 1.6676f)
+#define EXT_ANALOG_READ_TASK_DELAY EXT_ANALOG_SETTLING_TIME+2  // Call the read task a little late to catch the ADC just after conversion
 
 // Config Switch
 #define SW_1 8
@@ -68,7 +68,7 @@ const float  PWR_5V_LVL_COUNTS_TO_V = 1/((4096/V_3_3)*0.5); // Multiply counts b
 const float  PWR_5V_LVL_VDIV_SCLR = (1/0.5); // // Multiply ADC Volts by this scalar to get real Volts. => (1/0.5)
 #define VIN_LVL_EN_PIN 4
 #define PWR_5V_A_LVL_PIN 6
-#define SPI_FREQ 80000000
+#define SPI_FREQ 20000000
 #define INT_ADC_TASK_DELAY 5000
 
 // UI
@@ -162,11 +162,13 @@ static uint8_t penner_logo_bits[] = {
   };
 
 // Define tasks
-void TaskUpdateWeightReadingLCD( void *pvParameters );
 void TaskIntAnalogRead( void *pvParameters );
 void TaskPowerZeroButton( void *pvParameters );
 void TaskUnitButton( void *pvParameters );
 void TaskUI( void *pvParameters );
+
+// Define helper functions
+void UpdateWeightReadingLCD();
 
 SemaphoreHandle_t SPImutex = xSemaphoreCreateMutex();
 
@@ -321,7 +323,8 @@ void setup() {
   ledcWrite(LCD_BACKLIGHT, backlightPWM * backlightEnable);
 
   SPI.begin(SCLK, MISO, MOSI, LCD_CS);
-  SPI.setFrequency(SPI_FREQ);
+  SPI.setFrequency(1000000);
+  u8g2.setBusClock(1000000); //This command must be placed before the first call to u8g2.begin() or u8g2.initDisplay().  However, it doesn't seem to change the overall rate of ~112kHz.
   // Start LCD
   u8g2.begin();
   // Set contrast
@@ -373,7 +376,7 @@ void setup() {
     AD7193.setRate(EXT_ADC_RATE);
     AD7193.setFilter(AD7193_MODE_SINC4);
     AD7193.enableNotchFilter(true);
-    AD7193.enableChop(false);
+    AD7193.enableChop(true);
     AD7193.enableBuffer(true);
     AD7193.rangeSetup(0, AD7193_CONF_GAIN_128);
     AD7193.setBPDSW(true);
@@ -381,13 +384,13 @@ void setup() {
     delay(500);
     Serial.println(F("AD7193 Initialized!"));
     AD7193.channelSelect(AD7193_CH_0);
-    vTaskDelay(EXT_ANALOG_SETTLING_TIME);
-    AD7193.waitReady();
+    
+    delay(EXT_ANALOG_READ_TASK_DELAY);
     extADCResultCh0 = AD7193.continuousReadAverage(EXT_ADC_AVG_NUM);
+    
     Serial.printf("ADC Ch0 Result Avg: %d\n", extADCResultCh0);
     AD7193.channelSelect(AD7193_CH_1);
-    vTaskDelay(EXT_ANALOG_SETTLING_TIME);
-    AD7193.waitReady();
+    delay(EXT_ANALOG_READ_TASK_DELAY);
     extADCResultCh1 = AD7193.continuousReadAverage(EXT_ADC_AVG_NUM);
     Serial.printf("ADC Ch1 Result Avg: %d\n", extADCResultCh1);    
 
@@ -422,20 +425,6 @@ void setup() {
     ,  &xHandleTaskIntAnalogRead
     ,  ARDUINO_RUNNING_CORE // Core on which the task will run
     );
-
-    delay(100); // Wait for the battery level to be measured before displaying to the screen.
-    
-  xTaskCreatePinnedToCore(
-    TaskUpdateWeightReadingLCD
-    ,  "Update Weight LCD"
-    ,  4096  // Stack size
-    ,  NULL  // When no parameter is used, simply pass NULL
-    ,  3  // Priority
-    ,  &xHandleTaskUpdateWeightLCD // With task handle we will be able to manipulate with this task.
-    ,  ARDUINO_RUNNING_CORE // Core on which the task will run
-    );
-
-  while (extADCResultCh0 == 0); // Separate the two tasks using the SPI bus by a short time to try to avoid writing at the same time (we also have a mutex)
 
   xTaskCreatePinnedToCore(
     TaskExtAnalogRead
@@ -605,27 +594,39 @@ void TaskUI(void *pvParameters)
 void TaskExtAnalogRead(void *pvParameters)
 {
   ( void ) pvParameters;
+  TickType_t xLastWakeTime;
   static uint32_t taskWakesSinceWeightChange = 0;
   static float lastExtADCweight = 0; 
   static float weightChangeLB = 0; 
 
+  // Set first channel to be converted
+  xSemaphoreTake(SPImutex, portMAX_DELAY);
+  SPI.begin(SCLK, MISO, MOSI, EXT_ADC_CS);
+  SPI.setFrequency(SPI_FREQ);
+  AD7193.channelSelect(AD7193_CH_0);
+  SPI.end();
+  xSemaphoreGive(SPImutex);
+  
+  xTaskDelayUntil(&xLastWakeTime, EXT_ANALOG_READ_TASK_DELAY/portTICK_PERIOD_MS);
+
   for (;;){ // A Task shall never return or exit.
     lastExtADCweight = extADCweight;
-    xSemaphoreTake(SPImutex, portMAX_DELAY); // enter critical section
+
+    xSemaphoreTake(SPImutex, portMAX_DELAY);
     SPI.begin(SCLK, MISO, MOSI, EXT_ADC_CS);
     SPI.setFrequency(SPI_FREQ);
-    AD7193.channelSelect(AD7193_CH_0);
-    vTaskDelay(EXT_ANALOG_SETTLING_TIME);
-    AD7193.waitReady();
+    
     extADCResultCh0 = AD7193.continuousReadAverage(EXT_ADC_AVG_NUM);
     //Serial.printf("extADCweight0: %d\n", extADCResultCh0);
+
     AD7193.channelSelect(AD7193_CH_1);
-    vTaskDelay(EXT_ANALOG_SETTLING_TIME);
-    AD7193.waitReady();
+    xTaskDelayUntil(&xLastWakeTime, EXT_ANALOG_READ_TASK_DELAY/portTICK_PERIOD_MS);
+    
     extADCResultCh1 = AD7193.continuousReadAverage(EXT_ADC_AVG_NUM);
     //Serial.printf("extADCweight1: %d\n", extADCResultCh1);
+    AD7193.channelSelect(AD7193_CH_0);
     SPI.end();
-    xSemaphoreGive(SPImutex); // exit critical section
+    xSemaphoreGive(SPImutex);
       
     // If DIP switch 1 is off (logic high), then scale is configured for single channel.  Otherwise use both channels.
     if(configSwitch1) extADCResult = extADCResultCh0; else extADCResult = extADCResultCh0 + extADCResultCh1;
@@ -635,6 +636,10 @@ void TaskExtAnalogRead(void *pvParameters)
     extADCweight = removeNegativeSignFromZero(extADCweight);
     //Serial.printf("extADCweight: %f\n", extADCweight);
 
+    // Now that we have readings from both channels, display the updated value
+    UpdateWeightReadingLCD();
+
+    // Check for activity - if no activity timout reached, power down
     weightChangeLB = abs(lastExtADCweight - extADCweight);
     if(unitVal == kg) weightChangeLB = (weightChangeLB * kgtolbScalar);
     if(weightChangeLB > NO_ACTIVITY_WEIGHT_RANGE_LB) taskWakesSinceWeightChange = 0; else taskWakesSinceWeightChange++;
@@ -648,7 +653,7 @@ void TaskExtAnalogRead(void *pvParameters)
     {
       noActivityPowerDownFlag = false;
     }
-    vTaskDelay(EXT_ANALOG_READ_TASK_DELAY/portTICK_PERIOD_MS);
+    xTaskDelayUntil(&xLastWakeTime, EXT_ANALOG_READ_TASK_DELAY/portTICK_PERIOD_MS);
   }
 }
 
@@ -850,51 +855,44 @@ void TaskBKLButton(void *pvParameters)
   }
 }
 
-void TaskUpdateWeightReadingLCD(void *pvParameters)
+void UpdateWeightReadingLCD()
 {
-  TickType_t xLastWakeTime;
-  ( void ) pvParameters;
-
-  for(;;)
+  if(updateLCDWeight)
   {
-    if(updateLCDWeight)
-    {
-      String s_extADCweight;
+    String s_extADCweight;
 
-      //char vBuffer[7];
-      //dtostrf(extADCweight,5,2, vBuffer);  // Cannot use printf with floats with small task sizes (<2048) - so do this instead
-      //Serial.printf("ExtADC: %s\n", vBuffer);
+    //char vBuffer[7];
+    //dtostrf(extADCweight,5,2, vBuffer);  // Cannot use printf with floats with small task sizes (<2048) - so do this instead
+    //Serial.printf("ExtADC: %s\n", vBuffer);
 
-      u8g2.clearBuffer();
-      u8g2.setFont(WVAL_FONT);
-      s_extADCweight = String(extADCweight, WVAL_DEC_PLS);
-      // Split string at the decimal point because display looks strange with large decimal point spacing
+    u8g2.clearBuffer();
+    u8g2.setFont(WVAL_FONT);
+    s_extADCweight = String(extADCweight, WVAL_DEC_PLS);
+    // Split string at the decimal point because display looks strange with large decimal point spacing
 
-      // Print decimal point first
-      u8g2.setCursor(WVAL_X_POS-u8g2.getStrWidth(s_extADCweight.substring(s_extADCweight.length()-WVAL_DEC_PLS).c_str())-DEC_PT_S_PX+((DEC_PT_S_PX-DEC_PT_W_PX)/2)-DEC_PT_W_PX-1, WVAL_Y_POS);
-      u8g2.print(".");
+    // Print decimal point first
+    u8g2.setCursor(WVAL_X_POS-u8g2.getStrWidth(s_extADCweight.substring(s_extADCweight.length()-WVAL_DEC_PLS).c_str())-DEC_PT_S_PX+((DEC_PT_S_PX-DEC_PT_W_PX)/2)-DEC_PT_W_PX-1, WVAL_Y_POS);
+    u8g2.print(".");
 
-      // Print numbers left of the deicmal place
-      u8g2.setCursor(WVAL_X_POS-u8g2.getStrWidth((s_extADCweight.c_str()+1))-DEC_PT_S_PX, WVAL_Y_POS);
-      u8g2.print(s_extADCweight.substring(0, s_extADCweight.length()-WVAL_DEC_PLS-1).c_str());  
-      
-      // Print numbers right of the decimal place
-      u8g2.setCursor(WVAL_X_POS-u8g2.getStrWidth(s_extADCweight.substring(s_extADCweight.length()-WVAL_DEC_PLS).c_str()), WVAL_Y_POS);
-      u8g2.print(s_extADCweight.substring(s_extADCweight.length()-WVAL_DEC_PLS).c_str());
+    // Print numbers left of the deicmal place
+    u8g2.setCursor(WVAL_X_POS-u8g2.getStrWidth((s_extADCweight.c_str()+1))-DEC_PT_S_PX, WVAL_Y_POS);
+    u8g2.print(s_extADCweight.substring(0, s_extADCweight.length()-WVAL_DEC_PLS-1).c_str());  
+    
+    // Print numbers right of the decimal place
+    u8g2.setCursor(WVAL_X_POS-u8g2.getStrWidth(s_extADCweight.substring(s_extADCweight.length()-WVAL_DEC_PLS).c_str()), WVAL_Y_POS);
+    u8g2.print(s_extADCweight.substring(s_extADCweight.length()-WVAL_DEC_PLS).c_str());
 
-      u8g2.setFont(UNIT_FONT);
-      u8g2.setCursor(UNIT_X_POS, UNIT_Y_POS);
-      
-      u8g2.print(unitAbbr[unitVal]);
+    u8g2.setFont(UNIT_FONT);
+    u8g2.setCursor(UNIT_X_POS, UNIT_Y_POS);
+    
+    u8g2.print(unitAbbr[unitVal]);
 
-      // Print battery indicator
-      u8g2.drawFrame(BAT_IND_X_POS, BAT_IND_Y_POS, BAT_IND_WIDTH - BAT_BUMP_WIDTH, BAT_IND_HEIGHT);
-      u8g2.drawFrame(BAT_IND_X_POS + BAT_IND_WIDTH - BAT_BUMP_WIDTH, BAT_IND_Y_POS + BAT_IND_HEIGHT/2 - BAT_BUMP_HEIGHT/2, BAT_IND_X_POS - BAT_BUMP_WIDTH, BAT_BUMP_WIDTH);  
-      u8g2.drawBox(BAT_IND_X_POS, BAT_IND_Y_POS, convertBattVtoBarPx(vinVolts), BAT_IND_HEIGHT);
+    // Print battery indicator
+    u8g2.drawFrame(BAT_IND_X_POS, BAT_IND_Y_POS, BAT_IND_WIDTH - BAT_BUMP_WIDTH, BAT_IND_HEIGHT);
+    u8g2.drawFrame(BAT_IND_X_POS + BAT_IND_WIDTH - BAT_BUMP_WIDTH, BAT_IND_Y_POS + BAT_IND_HEIGHT/2 - BAT_BUMP_HEIGHT/2, BAT_IND_X_POS - BAT_BUMP_WIDTH, BAT_BUMP_WIDTH);  
+    u8g2.drawBox(BAT_IND_X_POS, BAT_IND_Y_POS, convertBattVtoBarPx(vinVolts), BAT_IND_HEIGHT);
 
-      sendBufferSPISafe();
-    }
-    xTaskDelayUntil(&xLastWakeTime, LCD_UPDATE_DELAY/portTICK_PERIOD_MS);
+    sendBufferSPISafe();
   }
 }
 
@@ -1170,7 +1168,6 @@ void sendBufferSPISafe(void)
   if (xSemaphoreTake(SPImutex, ( TickType_t ) 2000) == pdTRUE) // enter critical section
   {
     SPI.begin(SCLK, MISO, MOSI, LCD_CS);
-    SPI.setFrequency(SPI_FREQ);
     u8g2.initInterface();
     u8g2.sendBuffer();
     SPI.end();
