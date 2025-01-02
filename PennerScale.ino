@@ -17,6 +17,8 @@
 #include <Wire.h>
 #endif
 
+#define FW_VER  "0.9.1"
+
 // Pin defines
 // LCD
 #define LCD_RST 15
@@ -246,8 +248,6 @@ void setup() {
   // Initialize serial communication at 115200 bits per second:
   Serial.begin(115200);
 
-  delay(250);
-
   // Enable 3.3V 
   pinMode(V3V3_EN, OUTPUT);
   digitalWrite(V3V3_EN, HIGH);
@@ -336,7 +336,9 @@ void setup() {
   SPI.end();
   digitalWrite(LCD_CS, HIGH);
 
-  Serial.print("Scale initializing.\n\r");
+  delay(500); // Logo display and serial port ready delay
+
+  Serial.printf("Penner Scale FW: %s\n\r", FW_VER);
   Serial.printf("Config Switch1: %d\n\r", configSwitch1);
   Serial.printf("Config Switch2: %d\n\r", configSwitch2);
 
@@ -367,7 +369,7 @@ void setup() {
   AD7193.setSPI(SPI);
   AD7193.begin();
   if(0){ // !AD7193.begin()) {
-    Serial.println(F("AD7193 initialization failed!"));
+    Serial.println(F("ADC initialization failed!"));
   } else {
     AD7193.setClockMode(AD7193_CLK_INT);
     AD7193.setRate(EXT_ADC_RATE);
@@ -378,18 +380,17 @@ void setup() {
     AD7193.rangeSetup(0, AD7193_CONF_GAIN_128);
     AD7193.setBPDSW(true);
     AD7193.printAllRegisters();
-    delay(500);
-    Serial.println(F("AD7193 Initialized!"));
+    Serial.println(F("ADC Initialized."));
     AD7193.channelSelect(AD7193_CH_0);
     
     delay(EXT_ANALOG_READ_TASK_DELAY);
     extADCResultCh0 = AD7193.singleConversion();
     
-    Serial.printf("ADC Ch0 Result Avg: %d\n", extADCResultCh0);
+    Serial.printf("ADC Ch0: %d\n", extADCResultCh0);
     AD7193.channelSelect(AD7193_CH_1);
     delay(EXT_ANALOG_READ_TASK_DELAY);
     extADCResultCh1 = AD7193.singleConversion();
-    Serial.printf("ADC Ch1 Result Avg: %d\n", extADCResultCh1);    
+    Serial.printf("ADC Ch1: %d\n", extADCResultCh1);    
 
     AD7193.channelSelect(AD7193_CH_0);  // Set the ADC back to Ch0 to get ready for the ADC read task
 
@@ -402,11 +403,10 @@ void setup() {
     SPI.end();
   }
   
-    // Splash screen delay
-  delay(1000);
 
-  u8g2.clearBuffer();
-  u8g2.sendBuffer();
+
+  // u8g2.clearBuffer();
+  // u8g2.sendBuffer();
 
   // Allow user to release button before proceeding
   while (digitalRead(PWR_ZERO_BTN))
@@ -628,7 +628,7 @@ void TaskExtAnalogRead(void *pvParameters)
     if(calUnit == lb && unitVal == kg) extADCweight = extADCweight / kgtolbScalar;
     else if(calUnit == kg && unitVal == lb) extADCweight = extADCweight * kgtolbScalar;
     extADCweight = removeNegativeSignFromZero(extADCweight);
-    Serial.printf("extADCweight: %f\n", extADCweight);
+    // Serial.printf("extADCweight: %f\n", extADCweight);
 
     // Now that we have readings from both channels, display the updated value
     UpdateWeightReadingLCD();
