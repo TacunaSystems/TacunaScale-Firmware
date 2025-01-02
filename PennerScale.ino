@@ -47,11 +47,11 @@
 #define MOSI 11
 #define EXT_ADC_CS 10
 #define EXT_ADC_AVG_NUM 1
-#define NO_ACTIVITY_THRESHOLD_MS 300000/EXT_ANALOG_READ_TASK_DELAY  // 5 minutes * 60 seconds * 1000 = 300,000ms for 5 minute timeout
-#define NO_ACTIVITY_WEIGHT_RANGE_LB 5
+#define NO_ACTIVITY_THRESHOLD_MS 300000  // 5min
+#define NO_ACTIVITY_WEIGHT_RANGE_LB 1
 #define EXT_ADC_RATE 150  // 150 = 4Hz (based on settling time), 120 = 5Hz, 100=6Hz, 85=7Hz.  
 #define EXT_ANALOG_SETTLING_TIME (EXT_ADC_RATE * 1.6676f)
-#define EXT_ANALOG_READ_TASK_DELAY EXT_ANALOG_SETTLING_TIME+2  // Call the read task a little late to catch the ADC just after conversion
+#define EXT_ANALOG_READ_TASK_DELAY EXT_ANALOG_SETTLING_TIME + 2  // Call the read task a little late to catch the ADC just after conversion
 
 // Config Switch
 #define SW_1 8
@@ -336,9 +336,6 @@ void setup() {
   SPI.end();
   digitalWrite(LCD_CS, HIGH);
 
-  // Splash screen delay
-  delay(1500);
-
   Serial.print("Scale initializing.\n\r");
   Serial.printf("Config Switch1: %d\n\r", configSwitch1);
   Serial.printf("Config Switch2: %d\n\r", configSwitch2);
@@ -386,13 +383,15 @@ void setup() {
     AD7193.channelSelect(AD7193_CH_0);
     
     delay(EXT_ANALOG_READ_TASK_DELAY);
-    extADCResultCh0 = AD7193.continuousReadAverage(EXT_ADC_AVG_NUM);
+    extADCResultCh0 = AD7193.singleConversion();
     
     Serial.printf("ADC Ch0 Result Avg: %d\n", extADCResultCh0);
     AD7193.channelSelect(AD7193_CH_1);
     delay(EXT_ANALOG_READ_TASK_DELAY);
-    extADCResultCh1 = AD7193.continuousReadAverage(EXT_ADC_AVG_NUM);
+    extADCResultCh1 = AD7193.singleConversion();
     Serial.printf("ADC Ch1 Result Avg: %d\n", extADCResultCh1);    
+
+    AD7193.channelSelect(AD7193_CH_0);  // Set the ADC back to Ch0 to get ready for the ADC read task
 
     // If DIP switch 1 is off (logic high), then scale is configured for single channel.  Otherwise use both channels.
     if(configSwitch1) extADCResult = extADCResultCh0; else extADCResult = extADCResultCh0 + extADCResultCh1;
@@ -403,6 +402,9 @@ void setup() {
     SPI.end();
   }
   
+    // Splash screen delay
+  delay(1000);
+
   u8g2.clearBuffer();
   u8g2.sendBuffer();
 
@@ -489,7 +491,7 @@ void loop(){
 
 void TaskUI(void *pvParameters)
 {
-  TickType_t xLastWakeTime;
+  TickType_t xLastWakeTime = xTaskGetTickCount ();
   ( void ) pvParameters;
   for (;;)
   {
@@ -594,19 +596,11 @@ void TaskUI(void *pvParameters)
 void TaskExtAnalogRead(void *pvParameters)
 {
   ( void ) pvParameters;
-  TickType_t xLastWakeTime;
-  static uint32_t taskWakesSinceWeightChange = 0;
+  TickType_t xLastWakeTime = xTaskGetTickCount ();
+  static uint32_t msAtLastWeightChange = millis();
   static float lastExtADCweight = 0; 
   static float weightChangeLB = 0; 
 
-  // Set first channel to be converted
-  xSemaphoreTake(SPImutex, portMAX_DELAY);
-  SPI.begin(SCLK, MISO, MOSI, EXT_ADC_CS);
-  SPI.setFrequency(SPI_FREQ);
-  AD7193.channelSelect(AD7193_CH_0);
-  SPI.end();
-  xSemaphoreGive(SPImutex);
-  
   xTaskDelayUntil(&xLastWakeTime, EXT_ANALOG_READ_TASK_DELAY/portTICK_PERIOD_MS);
 
   for (;;){ // A Task shall never return or exit.
@@ -616,13 +610,13 @@ void TaskExtAnalogRead(void *pvParameters)
     SPI.begin(SCLK, MISO, MOSI, EXT_ADC_CS);
     SPI.setFrequency(SPI_FREQ);
     
-    extADCResultCh0 = AD7193.continuousReadAverage(EXT_ADC_AVG_NUM);
+    extADCResultCh0 = AD7193.singleConversion();
     //Serial.printf("extADCweight0: %d\n", extADCResultCh0);
 
     AD7193.channelSelect(AD7193_CH_1);
     xTaskDelayUntil(&xLastWakeTime, EXT_ANALOG_READ_TASK_DELAY/portTICK_PERIOD_MS);
     
-    extADCResultCh1 = AD7193.continuousReadAverage(EXT_ADC_AVG_NUM);
+    extADCResultCh1 = AD7193.singleConversion();
     //Serial.printf("extADCweight1: %d\n", extADCResultCh1);
     AD7193.channelSelect(AD7193_CH_0);
     SPI.end();
@@ -634,7 +628,7 @@ void TaskExtAnalogRead(void *pvParameters)
     if(calUnit == lb && unitVal == kg) extADCweight = extADCweight / kgtolbScalar;
     else if(calUnit == kg && unitVal == lb) extADCweight = extADCweight * kgtolbScalar;
     extADCweight = removeNegativeSignFromZero(extADCweight);
-    //Serial.printf("extADCweight: %f\n", extADCweight);
+    Serial.printf("extADCweight: %f\n", extADCweight);
 
     // Now that we have readings from both channels, display the updated value
     UpdateWeightReadingLCD();
@@ -642,8 +636,8 @@ void TaskExtAnalogRead(void *pvParameters)
     // Check for activity - if no activity timout reached, power down
     weightChangeLB = abs(lastExtADCweight - extADCweight);
     if(unitVal == kg) weightChangeLB = (weightChangeLB * kgtolbScalar);
-    if(weightChangeLB > NO_ACTIVITY_WEIGHT_RANGE_LB) taskWakesSinceWeightChange = 0; else taskWakesSinceWeightChange++;
-    if(taskWakesSinceWeightChange > NO_ACTIVITY_THRESHOLD_MS)
+    if(weightChangeLB > NO_ACTIVITY_WEIGHT_RANGE_LB) msAtLastWeightChange = millis();
+    if(millis() - msAtLastWeightChange > NO_ACTIVITY_THRESHOLD_MS)
     {
       noActivityPowerDownFlag = true;
       Serial.println("No activity - power down.");
@@ -683,7 +677,7 @@ void TaskIntAnalogRead(void *pvParameters)
 void TaskPowerZeroButton(void *pvParameters)
 { 
   static uint8_t powerButtonCounter = 0;
-  TickType_t xLastWakeTime;
+  TickType_t xLastWakeTime = xTaskGetTickCount ();
 
   ( void ) pvParameters;
 
@@ -746,7 +740,7 @@ void TaskPowerZeroButton(void *pvParameters)
 void TaskUnitButton(void *pvParameters)
 {  
   static uint8_t unitButtonCounter = 0;
-  TickType_t xLastWakeTime;
+  TickType_t xLastWakeTime = xTaskGetTickCount ();
 
   ( void ) pvParameters;
 
@@ -802,7 +796,7 @@ void TaskUnitButton(void *pvParameters)
 void TaskBKLButton(void *pvParameters)
 {  
   static uint8_t bklButtonCounter = 0;
-  TickType_t xLastWakeTime;
+  TickType_t xLastWakeTime = xTaskGetTickCount ();
 
   ( void ) pvParameters;
 
