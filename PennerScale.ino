@@ -5,6 +5,7 @@
 #include <U8g2lib.h>
 #include <PRDC_AD7193.h>
 #include <EEPROM.h>
+#include "RunningAverage.h"
 
 // Library defines
 // FreeRTOS
@@ -17,7 +18,7 @@
 #include <Wire.h>
 #endif
 
-#define FW_VER  "0.9.1"
+#define FW_VER  "0.9.2"
 
 // Pin defines
 // LCD
@@ -54,6 +55,7 @@
 #define EXT_ADC_RATE 150  // 150 = 4Hz (based on settling time), 120 = 5Hz, 100=6Hz, 85=7Hz.  
 #define EXT_ANALOG_SETTLING_TIME (EXT_ADC_RATE * 1.6676f)
 #define EXT_ANALOG_READ_TASK_DELAY EXT_ANALOG_SETTLING_TIME + 2  // Call the read task a little late to catch the ADC just after conversion
+#define EXT_ADC_AVG_SAMPLE_NUM 5
 
 // Config Switch
 #define SW_1 8
@@ -175,6 +177,8 @@ void UpdateWeightReadingLCD();
 SemaphoreHandle_t SPImutex = xSemaphoreCreateMutex();
 
 // Global variables
+RunningAverage extADCRunAV(EXT_ADC_AVG_SAMPLE_NUM);
+
 int32_t extADCResultCh0 = 0;
 int32_t extADCResultCh1 = 0;
 int32_t extADCResult = 0;
@@ -364,6 +368,9 @@ void setup() {
   Serial.printf("calUnit: %d (%s)\n\r", calUnit, unitAbbr[calUnit]);
 
   // Initialize external ADC
+
+  extADCRunAV.clear();  //   explicitly start our running average buffer clean
+
   SPI.begin(SCLK, MISO, MOSI, EXT_ADC_CS);
   SPI.setFrequency(SPI_FREQ);
   AD7193.setSPI(SPI);
@@ -629,6 +636,7 @@ void TaskExtAnalogRead(void *pvParameters)
     else if(calUnit == kg && unitVal == lb) extADCweight = extADCweight * kgtolbScalar;
     extADCweight = removeNegativeSignFromZero(extADCweight);
     // Serial.printf("extADCweight: %f\n", extADCweight);
+    extADCRunAV.add(extADCweight);
 
     // Now that we have readings from both channels, display the updated value
     UpdateWeightReadingLCD();
@@ -861,7 +869,7 @@ void UpdateWeightReadingLCD()
 
     u8g2.clearBuffer();
     u8g2.setFont(WVAL_FONT);
-    s_extADCweight = String(extADCweight, WVAL_DEC_PLS);
+    s_extADCweight = String(extADCRunAV.getAverage(), WVAL_DEC_PLS);
     // Split string at the decimal point because display looks strange with large decimal point spacing
 
     // Print decimal point first
