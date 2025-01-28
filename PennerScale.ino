@@ -647,7 +647,7 @@ void TaskExtAnalogRead(void *pvParameters)
     // Update the maximum weight recorded
     if (abs(extADCweight) > abs(extADCweightMax))
     {
-      Serial.printf("extADCweightMax: %f -> %f\n", extADCweightMax, extADCweight);
+      //Serial.printf("extADCweightMax: %f -> %f\n", extADCweightMax, extADCweight);
       extADCweightMax = extADCweight;
     }
     extADCRunAV.add(extADCweight);
