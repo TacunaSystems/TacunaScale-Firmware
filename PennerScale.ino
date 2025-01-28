@@ -18,7 +18,7 @@
 #include <Wire.h>
 #endif
 
-#define FW_VER  "0.9.2"
+#define FW_VER  "0.9.3"
 
 // Pin defines
 // LCD
@@ -183,6 +183,7 @@ int32_t extADCResultCh0 = 0;
 int32_t extADCResultCh1 = 0;
 int32_t extADCResult = 0;
 float extADCweight = 0.0;
+float extADCweightMax = 0.0;
 float vinVolts = 0.0;
 float v5vVolts = 0.0;
 
@@ -216,6 +217,7 @@ const int backlightEnable_eepromAdress = zeroVal_eepromAdress + sizeof(zeroValue
 const int unitVal_eepromAdress = backlightEnable_eepromAdress + sizeof(backlightEnable);
 const int calWeight_eepromAdress = unitVal_eepromAdress + sizeof(unitVal);
 const int calUnit_eepromAdress = calWeight_eepromAdress + sizeof(calWeight);
+const int extADCweightMax_eepromAdress = calUnit_eepromAdress + sizeof(calUnit);
 
 enum e_buttonStat {no_press = 0, is_pressed = 1, short_press = 2, long_press = 3};
 e_buttonStat powerButtonStat = no_press;  // Used to track immediate button status
@@ -246,6 +248,7 @@ void setup() {
   e_unitVal EEPROMunitVal;
   uint32_t EEPROMcalWeight;
   e_unitVal EEPROMcalUnit;
+  float EEPROMextADCweightMax;
 
   setCpuFrequencyMhz(REDUCED_CPU_SPEED);
 
@@ -305,6 +308,7 @@ void setup() {
   EEPROM.get(unitVal_eepromAdress, EEPROMunitVal);  
   EEPROM.get(calWeight_eepromAdress, EEPROMcalWeight);
   EEPROM.get(calUnit_eepromAdress, EEPROMcalUnit);
+  EEPROM.get(extADCweightMax_eepromAdress, EEPROMextADCweightMax);
 
   // If calValue is a real number, that means we've calibrated the unit and calValue and zeroValue are legitimate values
   if ((!isnan(EEPROMcalValue)) && (EEPROMcalValue>0))
@@ -323,6 +327,7 @@ void setup() {
   {
     calUnit = unitVal;
   }
+  if (!isnan(EEPROMextADCweightMax)) extADCweightMax = EEPROMextADCweightMax;
 
   ledcWrite(LCD_BACKLIGHT, backlightPWM * backlightEnable);
 
@@ -353,12 +358,14 @@ void setup() {
   Serial.printf("Default calWeight: %u\n\r", calWeight);
   Serial.printf("Default calUnit: %d\n\r", calUnit);
   
+  Serial.printf("Max EEPROM address: %d\n\r", extADCweightMax_eepromAdress);
   Serial.printf("EEPROM calVal: %f\n\r", EEPROMcalValue);
   Serial.printf("EEPROM zeroVal: %d\n\r", EEPROMZeroValue);  
   Serial.printf("EEPROM backlightEnable: %d\n\r", EEPROMbacklightEnable);
   Serial.printf("EEPROM unitVal: %d\n\r", EEPROMunitVal);
   Serial.printf("EEPROM calWeight: %u\n\r", EEPROMcalWeight);
   Serial.printf("EEPROM calUnit: %d\n\r", EEPROMcalUnit);
+  Serial.printf("EEPROM extADCweightMax: %f\n\r", EEPROMextADCweightMax);  
 
   Serial.printf("calVal: %f\n\r", calValue);
   Serial.printf("zeroVal: %u\n\r", zeroValue);
@@ -636,6 +643,13 @@ void TaskExtAnalogRead(void *pvParameters)
     else if(calUnit == kg && unitVal == lb) extADCweight = extADCweight * kgtolbScalar;
     extADCweight = removeNegativeSignFromZero(extADCweight);
     // Serial.printf("extADCweight: %f\n", extADCweight);
+    
+    // Update the maximum weight recorded
+    if (abs(extADCweight) > abs(extADCweightMax))
+    {
+      Serial.printf("extADCweightMax: %f -> %f\n", extADCweightMax, extADCweight);
+      extADCweightMax = extADCweight;
+    }
     extADCRunAV.add(extADCweight);
 
     // Now that we have readings from both channels, display the updated value
@@ -1183,11 +1197,30 @@ void sendBufferSPISafe(void)
 
 void powerDown(void)
 {
-  updateLCDWeight = false;
-  EEPROM.put(unitVal_eepromAdress, unitVal);
-  EEPROM.put(backlightEnable_eepromAdress, backlightEnable);
+  e_backlightEnable EEPROMbacklightEnable;
+  e_unitVal EEPROMunitVal;
+  float EEPROMextADCweightMax;
+
+  // Check EEPROM values and update if necessary
+  EEPROM.get(backlightEnable_eepromAdress, EEPROMbacklightEnable);
+  EEPROM.get(unitVal_eepromAdress, EEPROMunitVal);
+  EEPROM.get(extADCweightMax_eepromAdress, EEPROMextADCweightMax);
+
+  if(EEPROMunitVal != unitVal) EEPROM.put(unitVal_eepromAdress, unitVal);
+  if(EEPROMbacklightEnable != backlightEnable) EEPROM.put(backlightEnable_eepromAdress, backlightEnable);
+  Serial.printf("EEPROMextADCweightMax: %f\n", EEPROMextADCweightMax);
+  Serial.printf("extADCweightMax: %f\n", extADCweightMax);
+  if(abs(extADCweightMax) > abs(EEPROMextADCweightMax))
+  {
+    EEPROM.put(extADCweightMax_eepromAdress, extADCweightMax);
+    Serial.printf("Updating extADCweightMax: %f", extADCweightMax);
+  }
+  vTaskDelay(50/portTICK_PERIOD_MS);
   EEPROM.commit();  // Save our settings to EEPROM
+  vTaskDelay(50/portTICK_PERIOD_MS);
+
   // Disable LCD backlight, clear LCD, power down
+  updateLCDWeight = false;
   ledcWrite(LCD_BACKLIGHT, 0);
   u8g2.clearBuffer();
   sendBufferSPISafe();
