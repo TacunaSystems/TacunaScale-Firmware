@@ -18,7 +18,7 @@
 #include <Wire.h>
 #endif
 
-#define FW_VER  "0.9.3"
+#define FW_VER  "1.0.0"
 
 // Pin defines
 // LCD
@@ -99,6 +99,7 @@ const float  PWR_5V_LVL_VDIV_SCLR = (1/0.5); // // Multiply ADC Volts by this sc
 #define WVAL_FONT u8g2_font_inb21_mn
 #define UNIT_FONT u8g2_font_7x13B_mr
 #define MSG_FONT u8g2_font_6x12_m_symbols
+#define FW_FONT u8g2_font_4x6_mr
 #define LCD_UPDATE_DELAY 333
 #define LCD_CONTRAST 60
 
@@ -178,7 +179,6 @@ SemaphoreHandle_t SPImutex = xSemaphoreCreateMutex();
 
 // Global variables
 RunningAverage extADCRunAV(EXT_ADC_AVG_SAMPLE_NUM);
-
 int32_t extADCResultCh0 = 0;
 int32_t extADCResultCh1 = 0;
 int32_t extADCResult = 0;
@@ -341,11 +341,16 @@ void setup() {
   // Display logo
   u8g2.clearBuffer();
   drawLogo();
+  u8g2.setFont(FW_FONT);
+  u8g2.setCursor(101, 43);
+  u8g2.print("v");
+  u8g2.print(FW_VER);
+
   u8g2.sendBuffer();
   SPI.end();
   digitalWrite(LCD_CS, HIGH);
 
-  delay(500); // Logo display and serial port ready delay
+  delay(750); // Logo display and serial port ready delay
 
   Serial.printf("Penner Scale FW: %s\n\r", FW_VER);
   Serial.printf("Config Switch1: %d\n\r", configSwitch1);
@@ -516,6 +521,7 @@ void TaskUI(void *pvParameters)
       Serial.printf("Zero scale flag set.\n");
       powerButtonFlag = no_press_flag;
       tareValue = (extADCResult - zeroValue)/calValue;
+      extADCRunAV.clear();
       Serial.printf("Tare Value: %f\n", tareValue);
     }
     else if (powerButtonFlag == long_press_flag && bklButtonStat == no_press && unitButtonStat == no_press)
@@ -659,7 +665,7 @@ void TaskExtAnalogRead(void *pvParameters)
     weightChangeLB = abs(lastExtADCweight - extADCweight);
     if(unitVal == kg) weightChangeLB = (weightChangeLB * kgtolbScalar);
     if(weightChangeLB > NO_ACTIVITY_WEIGHT_RANGE_LB) msAtLastWeightChange = millis();
-    if(millis() - msAtLastWeightChange > NO_ACTIVITY_THRESHOLD_MS)
+    if((millis() - msAtLastWeightChange > NO_ACTIVITY_THRESHOLD_MS) && (vinVolts > 5.1))  // If we are on battery (Vin>5.1V), power down.  Otherwise, assume we are USB powered and ignore idle timeout.
     {
       noActivityPowerDownFlag = true;
       Serial.println("No activity - power down.");
@@ -1091,6 +1097,7 @@ void doCalibration()
   powerButtonFlag = no_press_flag;
   unitButtonFlag = no_press_flag;
 
+  extADCRunAV.clear();
   u8g2.clearBuffer();
   u8g2.setCursor(0, USER_MSG_Y_POS);
   u8g2.print("--Scale Calibration--");  
@@ -1104,6 +1111,14 @@ void doCalibration()
   vTaskDelay(1000/portTICK_PERIOD_MS);
   u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
   u8g2.printf("Wait...");
+  sendBufferSPISafe();
+  vTaskDelay(1000/portTICK_PERIOD_MS);
+  u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
+  u8g2.printf("Wait....");  
+  sendBufferSPISafe();
+  vTaskDelay(1000/portTICK_PERIOD_MS);
+  u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
+  u8g2.printf("Wait.....");   
   sendBufferSPISafe();
   vTaskDelay(1000/portTICK_PERIOD_MS);
 
@@ -1127,6 +1142,7 @@ void doCalibration()
   powerButtonFlag = no_press_flag;
   unitButtonFlag = no_press_flag;
   
+  extADCRunAV.clear();
   u8g2.clearBuffer();
   u8g2.setCursor(0, USER_MSG_Y_POS);
   u8g2.print("--Scale Calibration--");  
@@ -1140,6 +1156,14 @@ void doCalibration()
   vTaskDelay(1000/portTICK_PERIOD_MS);
   u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
   u8g2.printf("Wait...");
+  sendBufferSPISafe();
+  vTaskDelay(1000/portTICK_PERIOD_MS);
+  u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
+  u8g2.printf("Wait....");  
+  sendBufferSPISafe();
+  vTaskDelay(1000/portTICK_PERIOD_MS);
+  u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
+  u8g2.printf("Wait....."); 
   sendBufferSPISafe();
   vTaskDelay(1000/portTICK_PERIOD_MS);
 
@@ -1165,6 +1189,7 @@ void doCalibration()
     vTaskDelay(DEBOUNCE_TIME/portTICK_PERIOD_MS);
   }  
 
+  extADCRunAV.clear();
   // Newly calibrated scale - do not need tare
   tareValue = 0;
   EEPROM.put(calVal_eepromAdress, calValue);
