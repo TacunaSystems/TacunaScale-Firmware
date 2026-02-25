@@ -14,9 +14,6 @@
 #ifdef U8X8_HAVE_HW_SPI
 #include <SPI.h>
 #endif
-#ifdef U8X8_HAVE_HW_I2C
-#include <Wire.h>
-#endif
 
 #define FW_VER  "1.0.0"
 
@@ -41,7 +38,7 @@
 #define V3V3_PG 18
 #define V5_A_PG 35
 // Battery level macro definition
-#define BATV_TO_BAR(V) (V * 4.8f - 26.4f)
+#define BATV_TO_BAR(V) ((V) * 4.8f - 26.4f)
 
 
 // Ext ADC
@@ -53,7 +50,7 @@
 #define NO_ACTIVITY_WEIGHT_RANGE_LB 1
 #define EXT_ADC_RATE 150  // 150 = 4Hz (based on settling time), 120 = 5Hz, 100=6Hz, 85=7Hz.  
 #define EXT_ANALOG_SETTLING_TIME (EXT_ADC_RATE * 1.6676f)
-#define EXT_ANALOG_READ_TASK_DELAY EXT_ANALOG_SETTLING_TIME + 2  // Call the read task a little late to catch the ADC just after conversion
+#define EXT_ANALOG_READ_TASK_DELAY (EXT_ANALOG_SETTLING_TIME + 2)  // Call the read task a little late to catch the ADC just after conversion
 #define EXT_ADC_AVG_SAMPLE_NUM 5
 
 // Config Switch
@@ -103,8 +100,8 @@ const float  PWR_5V_LVL_VDIV_SCLR = (1/0.5); // // Multiply ADC Volts by this sc
 #define BAT_IND_HEIGHT 6
 #define BAT_BUMP_HEIGHT 2
 #define BAT_BUMP_WIDTH 2
-#define BAT_IND_Y_POS WVAL_Y_POS - 29
-#define BAT_IND_X_POS u8g2.getDisplayWidth() - BAT_IND_WIDTH
+#define BAT_IND_Y_POS (WVAL_Y_POS - 29)
+#define BAT_IND_X_POS (u8g2.getDisplayWidth() - BAT_IND_WIDTH)
 
 // FreeRTOS constants
 //  240, 160, 80    <<< For all XTAL types
