@@ -50,12 +50,39 @@ pio run --target upload
 ├── lib/                    # Local/modified libraries
 │   └── PRDC_AD7193/        #   AD7192 ADC driver (uses AD7193 library, see note below)
 ├── include/                # Project header files
+│   ├── logo_penner.h       #   Penner boot splash logo (XBM)
+│   └── logo_tacuna.h       #   Tacuna Systems boot splash logo (XBM)
 ├── test/                   # Unit tests
 ├── docs/                   # Reference documents
 │   └── AD7192.xlsx         #   ADC filter word to settling time/Hz lookup table
+├── tools/                  # Development utilities
+│   └── png_to_xbm.py      #   PNG-to-XBM logo converter (requires Pillow)
 ├── archive/                # Archived Arduino IDE project (pre-PlatformIO)
 └── .vscode/                # VS Code / PlatformIO IDE settings
 ```
+
+### Boot Splash Logo
+
+The boot splash logo is selected at compile time via `SPLASH_LOGO` in `src/PennerScale.cpp`:
+
+```cpp
+#define SPLASH_LOGO_NONE   0  // No logo, FW version only
+#define SPLASH_LOGO_PENNER 1  // Penner logo
+#define SPLASH_LOGO_TACUNA 2  // Tacuna Systems logo
+#define SPLASH_LOGO SPLASH_LOGO_TACUNA  // Select active logo
+```
+
+Logo data lives in separate headers under `include/` (`logo_penner.h`, `logo_tacuna.h`).
+Each header defines `LOGO_WIDTH`, `LOGO_HEIGHT`, `LOGO_X_POS`, `LOGO_Y_POS`, and a
+`splash_logo_bits[]` array in LSB-first XBM format for `u8g2.drawXBM()`.
+
+To add a new logo, convert a PNG with the included helper script (requires [Pillow](https://pypi.org/project/Pillow/)):
+
+```
+python3 tools/png_to_xbm.py logo.png include/logo_new.h --guard LOGO_NEW_H
+```
+
+Then add a new `SPLASH_LOGO_*` constant and `#elif` branch in `PennerScale.cpp`.
 
 ### Firmware History
 
