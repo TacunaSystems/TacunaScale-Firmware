@@ -35,7 +35,7 @@
 // Power
 #define V3V3_EN 2
 #define VIN_LVL_EN 4
-#define VIN_LVL 5
+#define VIN_LVL 5       //  10k & 3.3k Vdiv => 1/0.248
 #define V5_A_LVL 6
 #define V5_A_EN 7
 #define V3V3_PG 18
@@ -49,7 +49,6 @@
 #define MISO 13
 #define MOSI 11
 #define EXT_ADC_CS 10
-#define EXT_ADC_AVG_NUM 1
 #define NO_ACTIVITY_THRESHOLD_MS 300000  // 5min
 #define NO_ACTIVITY_WEIGHT_RANGE_LB 1
 #define EXT_ADC_RATE 150  // 150 = 4Hz (based on settling time), 120 = 5Hz, 100=6Hz, 85=7Hz.  
@@ -62,7 +61,6 @@
 #define SW_2 9
 
 // Constants
-#define VIN_LVL_PIN 5 //  10k & 3.3k Vdiv => 1/0.248
 #define V_3_3 3.3f
 #define INT_ADC_M_VAL 0.995f
 #define INT_ADC_B_VAL 0.2413f
@@ -70,8 +68,6 @@ const float PWR_VIN_LVL_COUNTS_TO_V = 1/((4096/V_3_3)*0.248); // Multiply counts
 const float PWR_VIN_LVL_VDIV_SCLR = (1/0.248); // Multiply ADC Volts by this scalar to get real Volts. => (1/0.248)
 const float  PWR_5V_LVL_COUNTS_TO_V = 1/((4096/V_3_3)*0.5); // Multiply counts by this scalar to get Volts. => 1/((4096/3.3)*0.5)
 const float  PWR_5V_LVL_VDIV_SCLR = (1/0.5); // // Multiply ADC Volts by this scalar to get real Volts. => (1/0.5)
-#define VIN_LVL_EN_PIN 4
-#define PWR_5V_A_LVL_PIN 6
 #define SPI_FREQ 20000000
 #define INT_ADC_TASK_DELAY 5000
 
@@ -100,7 +96,6 @@ const float  PWR_5V_LVL_VDIV_SCLR = (1/0.5); // // Multiply ADC Volts by this sc
 #define UNIT_FONT u8g2_font_7x13B_mr
 #define MSG_FONT u8g2_font_6x12_m_symbols
 #define FW_FONT u8g2_font_4x6_mr
-#define LCD_UPDATE_DELAY 333
 #define LCD_CONTRAST 60
 
 // LCD battery indicator formatting constants
@@ -238,11 +233,8 @@ e_buttonFlag powerButtonFlag = no_press_flag;  // Used to alert other tasks of a
 e_buttonFlag unitButtonFlag = no_press_flag; // Used to alert other tasks of a button event - cleared by UI task
 e_buttonFlag bklButtonFlag = no_press_flag; // Used to alert other tasks of a button event - cleared by UI task
 
-long debounceTime = 200;
-
 TaskHandle_t xHandleTaskExtAnalogRead = NULL;
 TaskHandle_t xHandleTaskIntAnalogRead = NULL;
-TaskHandle_t xHandleTaskUpdateWeightLCD = NULL;
 TaskHandle_t xHandleTaskPowerZeroButton = NULL;
 TaskHandle_t xHandleTaskUnitButton = NULL;
 TaskHandle_t xHandleTaskBKLButton = NULL;
@@ -299,10 +291,10 @@ void setup() {
   pinMode(SCLK, OUTPUT);
   
   // Set internal ADC input
-  pinMode(VIN_LVL_PIN, INPUT);
-  pinMode(PWR_5V_A_LVL_PIN, INPUT);
-  pinMode(VIN_LVL_EN_PIN, OUTPUT);
-  digitalWrite(VIN_LVL_EN_PIN, LOW);
+  pinMode(VIN_LVL, INPUT);
+  pinMode(V5_A_LVL, INPUT);
+  pinMode(VIN_LVL_EN, OUTPUT);
+  digitalWrite(VIN_LVL_EN, LOW);
 
   // Set config switch inputs
   pinMode(SW_1, INPUT);
@@ -691,18 +683,18 @@ void TaskIntAnalogRead(void *pvParameters)
   ( void ) pvParameters;
   for (;;)
   {
-    digitalWrite(VIN_LVL_EN_PIN, HIGH);
+    digitalWrite(VIN_LVL_EN, HIGH);
     vTaskDelay(10/portTICK_PERIOD_MS);  // Delay to settle LPF
     // read the input on analog pin:
-    //sensorValue = analogRead(VIN_LVL_PIN)*PWR_VIN_LVL_COUNTS_TO_V*INT_ADC_M_VAL+INT_ADC_B_VAL;
-    vinVolts = analogReadVoltage(VIN_LVL_PIN)*PWR_VIN_LVL_VDIV_SCLR;
+    //sensorValue = analogRead(VIN_LVL)*PWR_VIN_LVL_COUNTS_TO_V*INT_ADC_M_VAL+INT_ADC_B_VAL;
+    vinVolts = analogReadVoltage(VIN_LVL)*PWR_VIN_LVL_VDIV_SCLR;
     char vBuffer[6];
     //dtostrf(vinVolts,4,2, vBuffer);  // Cannot use printf with floats with small task sizes (<2048) - so do this instead
-    digitalWrite(VIN_LVL_EN_PIN, LOW);
+    digitalWrite(VIN_LVL_EN, LOW);
     // print out the value you read:
     //Serial.printf("Vin: %s\t", vBuffer);
-    //sensorValue = analogRead(PWR_5V_A_LVL_PIN)*PWR_5V_LVL_COUNTS_TO_V*INT_ADC_M_VAL+INT_ADC_B_VAL;
-    v5vVolts = analogReadVoltage(PWR_5V_A_LVL_PIN)*PWR_5V_LVL_VDIV_SCLR;
+    //sensorValue = analogRead(V5_A_LVL)*PWR_5V_LVL_COUNTS_TO_V*INT_ADC_M_VAL+INT_ADC_B_VAL;
+    v5vVolts = analogReadVoltage(V5_A_LVL)*PWR_5V_LVL_VDIV_SCLR;
     //dtostrf(v5vVolts,4,2, vBuffer);
     //Serial.printf("5V_A: %s\n", vBuffer);
     vTaskDelay(INT_ADC_TASK_DELAY/portTICK_PERIOD_MS);
