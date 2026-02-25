@@ -395,7 +395,7 @@ void setup() {
   SPI.begin(SCLK, MISO, MOSI, EXT_ADC_CS);
   SPI.setFrequency(SPI_FREQ);
   AD7193.setSPI(SPI);
-  AD7193.begin(); // ID check returns false (AD7192 vs AD7193) but init still works
+  AD7193.begin(); // ID check returns false — hardware is AD7192, library expects AD7193 — but init still works
   {
     AD7193.setClockMode(AD7193_CLK_INT);
     AD7193.setRate(EXT_ADC_RATE);
