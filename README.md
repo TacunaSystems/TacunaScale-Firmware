@@ -46,11 +46,21 @@ pio run --target upload
 ```
 ├── platformio.ini          # PlatformIO project configuration
 ├── src/                    # Application source code
-│   └── PennerScale.cpp
+│   └── PennerScale.cpp     #   Main firmware (FreeRTOS tasks, UI, calibration)
 ├── lib/                    # Local/modified libraries
-│   └── PRDC_AD7193/        # Modified AD7193 ADC library
+│   └── PRDC_AD7193/        #   AD7192 ADC driver (uses AD7193 library, see note below)
 ├── include/                # Project header files
 ├── test/                   # Unit tests
-├── archive/                # Archived Arduino IDE project
+├── docs/                   # Reference documents
+│   └── AD7192.xlsx         #   ADC filter word to settling time/Hz lookup table
+├── archive/                # Archived Arduino IDE project (pre-PlatformIO)
 └── .vscode/                # VS Code / PlatformIO IDE settings
 ```
+
+### ADC Library Note
+
+The hardware uses an **AD7192** but the firmware uses the third-party `PRDC_AD7193` library.
+The AD7192 and AD7193 share the same register map, so the library works correctly — however
+the library's `begin()` ID check will return false due to the device ID mismatch. This is
+expected and the return value is intentionally ignored. A unified AD719x family library is
+planned (see [#3](https://github.com/TacunaSystems/Penner-Scale-Firmware/issues/3)).
