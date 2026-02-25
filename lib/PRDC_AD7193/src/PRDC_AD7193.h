@@ -109,8 +109,8 @@
 // Configuration Register Bit Designations (AD7193_REG_CONF)
 #define AD7193_CONF_CHOP        (uint32_t(1) << 23)            // CHOP enable.
 #define AD7193_CONF_NO_CHOP     (uint32_t(0) << 23)            // CHOP disable.
-#define AD7193_CONF_REFSEL      (uint32_t(1) << 20)            // REFIN2 Reference Select.
-#define AD7193_CONF_REFSEL      (uint32_t(0) << 20)            // REFIN1 Reference Select.
+#define AD7193_CONF_REFSEL2     (uint32_t(1) << 20)            // REFIN2 Reference Select.
+#define AD7193_CONF_REFSEL1     (uint32_t(0) << 20)            // REFIN1 Reference Select.
 #define AD7193_CONF_PSEUDO      (uint32_t(1) << 18)            // Pseudo differential analog inputs.
 #define AD7193_CONF_DIFF        (uint32_t(0) << 18)            // Differential analog inputs.
 #define AD7193_CONF_CHAN(x)     (uint32_t((x) & 0x3FF) << 8) // Channel select.

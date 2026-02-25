@@ -46,7 +46,7 @@ pio run --target upload
 ```
 ├── platformio.ini          # PlatformIO project configuration
 ├── src/                    # Application source code
-│   └── PennerScale.ino
+│   └── PennerScale.cpp
 ├── lib/                    # Local/modified libraries
 │   └── PRDC_AD7193/        # Modified AD7193 ADC library
 ├── include/                # Project header files
