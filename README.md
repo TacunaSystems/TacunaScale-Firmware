@@ -57,10 +57,27 @@ pio run --target upload
 └── .vscode/                # VS Code / PlatformIO IDE settings
 ```
 
+### Firmware History
+
+This firmware originated as an Arduino IDE sketch and has been tested on hundreds of units
+internally. It was ported to PlatformIO for improved tooling and maintainability — the
+application logic is unchanged from the proven Arduino version (archived in `archive/`).
+
 ### ADC Library Note
 
-The hardware uses an **AD7192** but the firmware uses the third-party `PRDC_AD7193` library.
-The AD7192 and AD7193 share the same register map, so the library works correctly — however
-the library's `begin()` ID check will return false due to the device ID mismatch. This is
-expected and the return value is intentionally ignored. A unified AD719x family library is
-planned (see [#3](https://github.com/TacunaSystems/Penner-Scale-Firmware/issues/3)).
+The hardware uses an **AD7192** but the firmware currently uses the third-party `PRDC_AD7193`
+library (LGPL-3.0). The AD7192 and AD7193 share the same register map, so the library works
+correctly — however the library's `begin()` ID check will return false due to the device ID
+mismatch. This is expected and the return value is intentionally ignored. A proprietary
+AD719x family library is planned to replace this dependency
+(see [#3](https://github.com/TacunaSystems/Penner-Scale-Firmware/issues/3)).
+
+### Third-Party Libraries
+
+Before production release, all third-party library licenses must be reviewed for compliance:
+
+| Library | License | Source |
+|---------|---------|--------|
+| PRDC_AD7193 | LGPL-3.0 | `lib/PRDC_AD7193/` (local, to be replaced) |
+| U8g2 | BSD-2-Clause | PlatformIO registry |
+| RunningAverage | MIT | PlatformIO registry |
