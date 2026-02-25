@@ -21,7 +21,7 @@
 #define SPLASH_LOGO_NONE   0
 #define SPLASH_LOGO_PENNER 1
 #define SPLASH_LOGO_TACUNA 2
-#define SPLASH_LOGO SPLASH_LOGO_TACUNA  // Select active logo
+#define SPLASH_LOGO SPLASH_LOGO_PENNER  // Select active logo
 
 #if SPLASH_LOGO == SPLASH_LOGO_PENNER
 #include "logo_penner.h"
@@ -312,7 +312,7 @@ void setup() {
   drawLogo();
 #endif
   u8g2.setFont(FW_FONT);
-  u8g2.setCursor(101, 43);
+  u8g2.setCursor(101, 55);
   u8g2.print("v");
   u8g2.print(FW_VER);
 
