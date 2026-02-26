@@ -7,6 +7,11 @@
 
 #define FW_VER  "1.0.0"
 
+// FreeRTOS diagnostic SCPI commands (SYST:DIAG:STATS? / SYST:DIAG:LIST?)
+#ifndef FREERTOS_DIAG
+#define FREERTOS_DIAG 1
+#endif
+
 // LCD backlight pin (needed by SCPI backlight command)
 #define LCD_BACKLIGHT 14
 

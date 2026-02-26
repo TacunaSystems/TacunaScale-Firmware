@@ -120,8 +120,8 @@ const float  PWR_5V_LVL_VDIV_SCLR = (1/0.5); // // Multiply ADC Volts by this sc
 //  40, 20, 10      <<< For 40MHz XTAL
 #define REDUCED_CPU_SPEED 80  // Current measured at 30mA @ 9v at 40MHz.  Any slower than 40MHz and the UI is really laggy.
 
-// U8g2 Contructor (Frame Buffer)
-U8G2_ST7567_ENH_DG128064I_F_4W_SW_SPI u8g2(U8G2_R2, /* clock=*/ SCLK, /* data=*/ MOSI, /* cs=*/ LCD_CS, /* dc=*/ LCD_A0, /* reset=*/ LCD_RST); 
+// U8g2 Contructor (Frame Buffer) — Hardware SPI for ~2ms frame transfer vs ~73ms software
+U8G2_ST7567_ENH_DG128064I_F_4W_HW_SPI u8g2(U8G2_R2, /* cs=*/ LCD_CS, /* dc=*/ LCD_A0, /* reset=*/ LCD_RST);
 
 // AD7193 Constructor
 PRDC_AD7193 AD7193;
@@ -178,6 +178,7 @@ e_unitVal calUnit = DEFAULT_UNIT; // default calibration unit
 const float kgtolbScalar = 2.20462;
 const String unitAbbr[] = {"kg", "lb"};
 bool updateLCDWeight = true;
+volatile bool newWeightReady = false;
 bool noActivityPowerDownFlag = false;
 
 const int calVal_eepromAdress = 0;
@@ -300,9 +301,10 @@ void setup() {
 
   ledcWrite(LCD_BACKLIGHT, backlightPWM * backlightEnable);
 
-  SPI.begin(SCLK, MISO, MOSI, LCD_CS);
-  SPI.setFrequency(1000000);
-  u8g2.setBusClock(1000000); //This command must be placed before the first call to u8g2.begin() or u8g2.initDisplay().  However, it doesn't seem to change the overall rate of ~112kHz.
+  // Initialize shared SPI bus once (FSPI/SPI2 IOMUX pins — optimal for HW SPI)
+  SPI.begin(SCLK, MISO, MOSI, -1);  // No automatic SS — CS managed per-device
+
+  u8g2.setBusClock(4000000); // 4 MHz — ST7567 supports up to 20 MHz
   // Start LCD
   u8g2.begin();
   // Set contrast
@@ -318,8 +320,6 @@ void setup() {
   u8g2.print(FW_VER);
 
   u8g2.sendBuffer();
-  SPI.end();
-  digitalWrite(LCD_CS, HIGH);
 
   delay(750); // Logo display and serial port ready delay
 
@@ -354,8 +354,8 @@ void setup() {
 
   extADCRunAV.clear();  //   explicitly start our running average buffer clean
 
-  SPI.begin(SCLK, MISO, MOSI, EXT_ADC_CS);
-  SPI.setFrequency(SPI_FREQ);
+  // SPI bus already initialized above — configure ADC SPI settings
+  AD7193.setSPIFrequency(SPI_FREQ);
   AD7193.setSPI(SPI);
   AD7193.begin(); // ID check returns false — hardware is AD7192, library expects AD7193 — but init still works
   {
@@ -370,15 +370,15 @@ void setup() {
     AD7193.printAllRegisters();
     DBG_PRINTLN(F("ADC Initialized."));
     AD7193.channelSelect(AD7193_CH_0);
-    
+
     delay(EXT_ANALOG_READ_TASK_DELAY);
     extADCResultCh0 = AD7193.singleConversion();
-    
+
     DBG_PRINTF("ADC Ch0: %d\n", extADCResultCh0);
     AD7193.channelSelect(AD7193_CH_1);
     delay(EXT_ANALOG_READ_TASK_DELAY);
     extADCResultCh1 = AD7193.singleConversion();
-    DBG_PRINTF("ADC Ch1: %d\n", extADCResultCh1);    
+    DBG_PRINTF("ADC Ch1: %d\n", extADCResultCh1);
 
     AD7193.channelSelect(AD7193_CH_0);  // Set the ADC back to Ch0 to get ready for the ADC read task
 
@@ -387,8 +387,6 @@ void setup() {
 
     tareValue = (extADCResult - zeroValue)/calValue;
     DBG_PRINTF("Tare Value: %f\n", tareValue);
-
-    SPI.end();
   }
   
 
@@ -431,7 +429,7 @@ void setup() {
     ,  "Check Power/Zero Button"
     ,  2048  // Stack size
     ,  NULL  // When no parameter is used, simply pass NULL
-    ,  4  // Priority
+    ,  3  // Priority — same as ADC for responsive input
     ,  &xHandleTaskPowerZeroButton // With task handle we will be able to manipulate with this task.
     ,  ARDUINO_RUNNING_CORE // Core on which the task will run
     );
@@ -441,7 +439,7 @@ void setup() {
     ,  "Check Unit Button"
     ,  2048  // Stack size
     ,  NULL  // When no parameter is used, simply pass NULL
-    ,  4  // Priority
+    ,  3  // Priority — same as ADC for responsive input
     ,  &xHandleTaskUnitButton // With task handle we will be able to manipulate with this task.
     ,  ARDUINO_RUNNING_CORE // Core on which the task will run
     );
@@ -451,17 +449,17 @@ void setup() {
     ,  "Check Aux Button"
     ,  2048  // Stack size
     ,  NULL  // When no parameter is used, simply pass NULL
-    ,  4  // Priority
+    ,  3  // Priority — same as ADC for responsive input
     ,  &xHandleTaskBKLButton // With task handle we will be able to manipulate with this task.
     ,  ARDUINO_RUNNING_CORE // Core on which the task will run
-    );    
+    );
 
     xTaskCreatePinnedToCore(
     TaskUI
     ,  "UI Task"
     ,  4096  // Stack size
     ,  NULL  // When no parameter is used, simply pass NULL
-    ,  4  // Priority
+    ,  2  // Priority — LCD + events, round-robins with SCPI
     ,  &xHandleTaskUI // With task handle we will be able to manipulate with this task.
     ,  ARDUINO_RUNNING_CORE // Core on which the task will run
     );
@@ -471,9 +469,9 @@ void setup() {
     ,  "SCPI Task"
     ,  4096  // Stack size
     ,  NULL  // When no parameter is used, simply pass NULL
-    ,  2  // Priority
+    ,  2  // Priority — round-robins with UI at equal priority
     ,  &xHandleTaskSCPI
-    ,  0 // Run on core 0 to avoid contention with other tasks on core 1
+    ,  ARDUINO_RUNNING_CORE // All tasks on same core now that CPU starvation is fixed
     );
 
   DBG_PRINTF("Scale initialized.\n");
@@ -481,6 +479,7 @@ void setup() {
 }
 
 void loop(){
+  vTaskDelay(portMAX_DELAY);  // Nothing to do — yield forever
 }
 
 /*--------------------------------------------------*/
@@ -588,6 +587,12 @@ void TaskUI(void *pvParameters)
         bklButtonFlag = no_press_flag;
       }
     }
+    // Update LCD when new ADC data is available
+    if (newWeightReady) {
+      UpdateWeightReadingLCD();
+      newWeightReady = false;
+    }
+
     xTaskDelayUntil(&xLastWakeTime, 25/portTICK_PERIOD_MS);
   }
 }
@@ -605,20 +610,20 @@ void TaskExtAnalogRead(void *pvParameters)
   for (;;){ // A Task shall never return or exit.
     lastExtADCweight = extADCweight;
 
+    // --- Ch0 read (mutex held only during SPI transaction) ---
+    // AD7193 library manages its own beginTransaction/endTransaction internally
     xSemaphoreTake(SPImutex, portMAX_DELAY);
-    SPI.begin(SCLK, MISO, MOSI, EXT_ADC_CS);
-    SPI.setFrequency(SPI_FREQ);
-    
     extADCResultCh0 = AD7193.singleConversion();
-    //DBG_PRINTF("extADCweight0: %d\n", extADCResultCh0);
-
     AD7193.channelSelect(AD7193_CH_1);
+    xSemaphoreGive(SPImutex);
+
+    // Settling time between channel reads — mutex FREE, LCD can update here
     xTaskDelayUntil(&xLastWakeTime, EXT_ANALOG_READ_TASK_DELAY/portTICK_PERIOD_MS);
-    
+
+    // --- Ch1 read (mutex held only during SPI transaction) ---
+    xSemaphoreTake(SPImutex, portMAX_DELAY);
     extADCResultCh1 = AD7193.singleConversion();
-    //DBG_PRINTF("extADCweight1: %d\n", extADCResultCh1);
     AD7193.channelSelect(AD7193_CH_0);
-    SPI.end();
     xSemaphoreGive(SPImutex);
       
     // If DIP switch 1 is off (logic high), then scale is configured for single channel.  Otherwise use both channels.
@@ -637,8 +642,8 @@ void TaskExtAnalogRead(void *pvParameters)
     }
     extADCRunAV.add(extADCweight);
 
-    // Now that we have readings from both channels, display the updated value
-    UpdateWeightReadingLCD();
+    // Signal UI task that new weight data is available
+    newWeightReady = true;
 
     // Check for activity - if no activity timout reached, power down
     weightChangeLB = abs(lastExtADCweight - extADCweight);
@@ -1187,17 +1192,10 @@ void doCalibration()
 
 void sendBufferSPISafe(void)
 {
-  if (xSemaphoreTake(SPImutex, ( TickType_t ) 2000) == pdTRUE) // enter critical section
+  if (xSemaphoreTake(SPImutex, (TickType_t) 2000) == pdTRUE) // enter critical section
   {
-    SPI.begin(SCLK, MISO, MOSI, LCD_CS);
-    u8g2.initInterface();
-    u8g2.sendBuffer();
-    SPI.end();
+    u8g2.sendBuffer();  // HW_SPI handles transaction + CS internally
     xSemaphoreGive(SPImutex); // exit critical section
-  }
-  else
-  {
-    //DBG_PRINTLN("Couldn't take SPI mutex.");
   }
 }
 

@@ -225,6 +225,29 @@ static scpi_result_t Sys_PowerDown(scpi_t *context) {
 }
 
 /* ------------------------------------------------------------------ */
+/*  FreeRTOS diagnostic commands                                      */
+/* ------------------------------------------------------------------ */
+#if FREERTOS_DIAG
+
+/* SYSTem:DIAGnostic:STATS? — CPU run-time percentage per task */
+static scpi_result_t Sys_DiagStatsQ(scpi_t *context) {
+    char buf[512];
+    vTaskGetRunTimeStats(buf);
+    SCPI_ResultCharacters(context, buf, strlen(buf));
+    return SCPI_RES_OK;
+}
+
+/* SYSTem:DIAGnostic:LIST? — task state, priority, stack watermark */
+static scpi_result_t Sys_DiagListQ(scpi_t *context) {
+    char buf[512];
+    vTaskList(buf);
+    SCPI_ResultCharacters(context, buf, strlen(buf));
+    return SCPI_RES_OK;
+}
+
+#endif // FREERTOS_DIAG
+
+/* ------------------------------------------------------------------ */
 /*  Command table                                                     */
 /* ------------------------------------------------------------------ */
 
@@ -279,6 +302,12 @@ static const scpi_command_t scpi_commands[] = {
     { .pattern = "SYSTem:POWer:VOLTage:BATTery?", .callback = Sys_VbattQ, },
     { .pattern = "SYSTem:POWer:VOLTage:SUPPly?",  .callback = Sys_VsuppQ, },
     { .pattern = "SYSTem:POWer:DOWN",              .callback = Sys_PowerDown, },
+
+#if FREERTOS_DIAG
+    /* Diagnostics */
+    { .pattern = "SYSTem:DIAGnostic:STATS?",     .callback = Sys_DiagStatsQ, },
+    { .pattern = "SYSTem:DIAGnostic:LIST?",       .callback = Sys_DiagListQ, },
+#endif
 
     SCPI_CMD_LIST_END
 };

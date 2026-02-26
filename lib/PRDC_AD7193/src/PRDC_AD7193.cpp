@@ -25,6 +25,8 @@
  */
 
 #include "PRDC_AD7193.h"
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 // PRDC_AD7193()
 // Object constructor
@@ -364,7 +366,9 @@ void PRDC_AD7193::waitReady() {
   #ifdef DEBUG_AD7193
     Serial.println(F("waitReady()"));
   #endif
-  while(digitalRead(_MISO)) {}
+  while(digitalRead(_MISO)) {
+    vTaskDelay(1);  // Yield to FreeRTOS scheduler (~1ms between polls)
+  }
 }
 
 // setPower() function
