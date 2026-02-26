@@ -6,6 +6,8 @@
 #include <PRDC_AD7193.h>
 #include <EEPROM.h>
 #include "RunningAverage.h"
+#include "appconfig.h"
+#include "scpi_interface.h"
 
 // Library defines
 // FreeRTOS
@@ -14,8 +16,6 @@
 #ifdef U8X8_HAVE_HW_SPI
 #include <SPI.h>
 #endif
-
-#define FW_VER  "1.0.0"
 
 // Splash logo selector
 #define SPLASH_LOGO_NONE   0
@@ -34,7 +34,7 @@
 #define LCD_RST 15
 #define LCD_A0 16
 #define LCD_CS 17
-#define LCD_BACKLIGHT 14
+// LCD_BACKLIGHT defined in appconfig.h
 
 // User
 #define PWR_ZERO_BTN 19
@@ -161,14 +161,12 @@ float v5vVolts = 0.0;
 bool configSwitch1 = 0;
 bool configSwitch2 = 0;
 
-enum e_backlightEnable {off = 0, on = 1, on_motion = 2};
 e_backlightEnable backlightEnable = off;
 // setting PWM properties
 const uint32_t backlightPWMfreq = 5000;
 const uint8_t backlightPWMres = 8;
-const uint8_t backlightPWM = 80;
+extern const uint8_t backlightPWM = 80;
 
-enum e_unitVal {kg = 0, lb = 1};
 e_unitVal unitVal = DEFAULT_UNIT;
 
 float calValue = 7168.220215f; // default global calibration value (429.4967296f results in uV at 5Vexc and 128x gain, 7168.220215f gets close to the dual load cell setup)
@@ -206,6 +204,7 @@ TaskHandle_t xHandleTaskPowerZeroButton = NULL;
 TaskHandle_t xHandleTaskUnitButton = NULL;
 TaskHandle_t xHandleTaskBKLButton = NULL;
 TaskHandle_t xHandleTaskUI = NULL;
+TaskHandle_t xHandleTaskSCPI = NULL;
 
 // The setup function runs once when you press reset or power on the board.
 void setup() {
@@ -221,7 +220,9 @@ void setup() {
   setCpuFrequencyMhz(REDUCED_CPU_SPEED);
 
   // Initialize serial communication at 115200 bits per second:
-  Serial.begin(115200);
+  // Explicitly set RX=44, TX=43 (UART0 default pins) to ensure GPIO matrix is configured
+  Serial.begin(115200, SERIAL_8N1, 44, 43);
+  delay(500);
 
   // Enable 3.3V 
   pinMode(V3V3_EN, OUTPUT);
@@ -322,32 +323,32 @@ void setup() {
 
   delay(750); // Logo display and serial port ready delay
 
-  Serial.printf("Penner Scale FW: %s\n\r", FW_VER);
-  Serial.printf("Config Switch1: %d\n\r", configSwitch1);
-  Serial.printf("Config Switch2: %d\n\r", configSwitch2);
+  DBG_PRINTF("Penner Scale FW: %s\n\r", FW_VER);
+  DBG_PRINTF("Config Switch1: %d\n\r", configSwitch1);
+  DBG_PRINTF("Config Switch2: %d\n\r", configSwitch2);
 
-  Serial.printf("Default calVal: %f\n\r", calValue);
-  Serial.printf("Default zeroVal: %d\n\r", zeroValue);
-  Serial.printf("Default backlightEnable: %d\n\r", backlightEnable);
-  Serial.printf("Default unitVal: %d\n\r", unitVal);
-  Serial.printf("Default calWeight: %u\n\r", calWeight);
-  Serial.printf("Default calUnit: %d\n\r", calUnit);
+  DBG_PRINTF("Default calVal: %f\n\r", calValue);
+  DBG_PRINTF("Default zeroVal: %d\n\r", zeroValue);
+  DBG_PRINTF("Default backlightEnable: %d\n\r", backlightEnable);
+  DBG_PRINTF("Default unitVal: %d\n\r", unitVal);
+  DBG_PRINTF("Default calWeight: %u\n\r", calWeight);
+  DBG_PRINTF("Default calUnit: %d\n\r", calUnit);
   
-  Serial.printf("Max EEPROM address: %d\n\r", extADCweightMax_eepromAdress);
-  Serial.printf("EEPROM calVal: %f\n\r", EEPROMcalValue);
-  Serial.printf("EEPROM zeroVal: %d\n\r", EEPROMZeroValue);  
-  Serial.printf("EEPROM backlightEnable: %d\n\r", EEPROMbacklightEnable);
-  Serial.printf("EEPROM unitVal: %d\n\r", EEPROMunitVal);
-  Serial.printf("EEPROM calWeight: %u\n\r", EEPROMcalWeight);
-  Serial.printf("EEPROM calUnit: %d\n\r", EEPROMcalUnit);
-  Serial.printf("EEPROM extADCweightMax: %f\n\r", EEPROMextADCweightMax);  
+  DBG_PRINTF("Max EEPROM address: %d\n\r", extADCweightMax_eepromAdress);
+  DBG_PRINTF("EEPROM calVal: %f\n\r", EEPROMcalValue);
+  DBG_PRINTF("EEPROM zeroVal: %d\n\r", EEPROMZeroValue);  
+  DBG_PRINTF("EEPROM backlightEnable: %d\n\r", EEPROMbacklightEnable);
+  DBG_PRINTF("EEPROM unitVal: %d\n\r", EEPROMunitVal);
+  DBG_PRINTF("EEPROM calWeight: %u\n\r", EEPROMcalWeight);
+  DBG_PRINTF("EEPROM calUnit: %d\n\r", EEPROMcalUnit);
+  DBG_PRINTF("EEPROM extADCweightMax: %f\n\r", EEPROMextADCweightMax);  
 
-  Serial.printf("calVal: %f\n\r", calValue);
-  Serial.printf("zeroVal: %u\n\r", zeroValue);
-  Serial.printf("backlightEnable: %d\n\r", backlightEnable);
-  Serial.printf("unitVal: %d (%s)\n\r", unitVal, unitAbbr[unitVal]);
-  Serial.printf("calWeight: %u\n\r", calWeight);
-  Serial.printf("calUnit: %d (%s)\n\r", calUnit, unitAbbr[calUnit]);
+  DBG_PRINTF("calVal: %f\n\r", calValue);
+  DBG_PRINTF("zeroVal: %u\n\r", zeroValue);
+  DBG_PRINTF("backlightEnable: %d\n\r", backlightEnable);
+  DBG_PRINTF("unitVal: %d (%s)\n\r", unitVal, unitAbbr[unitVal]);
+  DBG_PRINTF("calWeight: %u\n\r", calWeight);
+  DBG_PRINTF("calUnit: %d (%s)\n\r", calUnit, unitAbbr[calUnit]);
 
   // Initialize external ADC
 
@@ -367,17 +368,17 @@ void setup() {
     AD7193.rangeSetup(0, AD7193_CONF_GAIN_128);
     AD7193.setBPDSW(true);
     AD7193.printAllRegisters();
-    Serial.println(F("ADC Initialized."));
+    DBG_PRINTLN(F("ADC Initialized."));
     AD7193.channelSelect(AD7193_CH_0);
     
     delay(EXT_ANALOG_READ_TASK_DELAY);
     extADCResultCh0 = AD7193.singleConversion();
     
-    Serial.printf("ADC Ch0: %d\n", extADCResultCh0);
+    DBG_PRINTF("ADC Ch0: %d\n", extADCResultCh0);
     AD7193.channelSelect(AD7193_CH_1);
     delay(EXT_ANALOG_READ_TASK_DELAY);
     extADCResultCh1 = AD7193.singleConversion();
-    Serial.printf("ADC Ch1: %d\n", extADCResultCh1);    
+    DBG_PRINTF("ADC Ch1: %d\n", extADCResultCh1);    
 
     AD7193.channelSelect(AD7193_CH_0);  // Set the ADC back to Ch0 to get ready for the ADC read task
 
@@ -385,7 +386,7 @@ void setup() {
     if(configSwitch1) extADCResult = extADCResultCh0; else extADCResult = extADCResultCh0 + extADCResultCh1;
 
     tareValue = (extADCResult - zeroValue)/calValue;
-    Serial.printf("Tare Value: %f\n", tareValue);
+    DBG_PRINTF("Tare Value: %f\n", tareValue);
 
     SPI.end();
   }
@@ -465,7 +466,17 @@ void setup() {
     ,  ARDUINO_RUNNING_CORE // Core on which the task will run
     );
 
-  Serial.printf("Scale initialized.\n");
+    xTaskCreatePinnedToCore(
+    TaskSCPI
+    ,  "SCPI Task"
+    ,  4096  // Stack size
+    ,  NULL  // When no parameter is used, simply pass NULL
+    ,  2  // Priority
+    ,  &xHandleTaskSCPI
+    ,  0 // Run on core 0 to avoid contention with other tasks on core 1
+    );
+
+  DBG_PRINTF("Scale initialized.\n");
   // Now the task scheduler, which takes over control of scheduling individual tasks, is automatically started.
 }
 
@@ -486,17 +497,17 @@ void TaskUI(void *pvParameters)
     if (powerButtonFlag == short_press_flag)
     {
       // Do zero routine
-      Serial.printf("Zero scale flag set.\n");
+      DBG_PRINTF("Zero scale flag set.\n");
       powerButtonFlag = no_press_flag;
       tareValue = (extADCResult - zeroValue)/calValue;
       extADCRunAV.clear();
-      Serial.printf("Tare Value: %f\n", tareValue);
+      DBG_PRINTF("Tare Value: %f\n", tareValue);
     }
     else if (powerButtonFlag == long_press_flag && bklButtonStat == no_press && unitButtonStat == no_press)
     {
       // Do long power button press task
       // Do power down
-      Serial.printf("Power down flag set.\n");
+      DBG_PRINTF("Power down flag set.\n");
       powerButtonFlag = no_press_flag;
       powerDown();    
     }
@@ -505,7 +516,7 @@ void TaskUI(void *pvParameters)
     if (unitButtonFlag == short_press_flag)
     {
       // Change units
-      Serial.printf("Change unit flag set.\n");
+      DBG_PRINTF("Change unit flag set.\n");
       unitButtonFlag = no_press_flag;
       if(unitVal == kg) unitVal = lb;
       else if(unitVal == lb) unitVal = kg;  
@@ -525,7 +536,7 @@ void TaskUI(void *pvParameters)
           // Both buttons have reached long-press status.  Execute double long-press task.
           bklButtonFlag = no_press_flag;
           unitButtonFlag = no_press_flag;
-          Serial.printf("Calibrate flag set.\n");
+          DBG_PRINTF("Calibrate flag set.\n");
           doCalibration();
         }
       }
@@ -547,7 +558,7 @@ void TaskUI(void *pvParameters)
       else if(backlightEnable == on) backlightEnable = off;
       //else if(backlightEnable == on) backlightEnable = on_motion;
       //else if(backlightEnable == on_motion) backlightEnable = off;        
-      Serial.printf("Backlight toggle flag set. Backlight = %d\n", backlightEnable);
+      DBG_PRINTF("Backlight toggle flag set. Backlight = %d\n", backlightEnable);
       ledcWrite(LCD_BACKLIGHT, backlightPWM * backlightEnable);
 
     }
@@ -566,7 +577,7 @@ void TaskUI(void *pvParameters)
           // Both buttons have reached long-press status.  Execute double long-press task.
           bklButtonFlag = no_press_flag;
           unitButtonFlag = no_press_flag;
-          Serial.printf("Calibrate flag set.\n");
+          DBG_PRINTF("Calibrate flag set.\n");
           doCalibration();
         }
 
@@ -599,13 +610,13 @@ void TaskExtAnalogRead(void *pvParameters)
     SPI.setFrequency(SPI_FREQ);
     
     extADCResultCh0 = AD7193.singleConversion();
-    //Serial.printf("extADCweight0: %d\n", extADCResultCh0);
+    //DBG_PRINTF("extADCweight0: %d\n", extADCResultCh0);
 
     AD7193.channelSelect(AD7193_CH_1);
     xTaskDelayUntil(&xLastWakeTime, EXT_ANALOG_READ_TASK_DELAY/portTICK_PERIOD_MS);
     
     extADCResultCh1 = AD7193.singleConversion();
-    //Serial.printf("extADCweight1: %d\n", extADCResultCh1);
+    //DBG_PRINTF("extADCweight1: %d\n", extADCResultCh1);
     AD7193.channelSelect(AD7193_CH_0);
     SPI.end();
     xSemaphoreGive(SPImutex);
@@ -616,12 +627,12 @@ void TaskExtAnalogRead(void *pvParameters)
     if(calUnit == lb && unitVal == kg) extADCweight = extADCweight / kgtolbScalar;
     else if(calUnit == kg && unitVal == lb) extADCweight = extADCweight * kgtolbScalar;
     extADCweight = removeNegativeSignFromZero(extADCweight);
-    // Serial.printf("extADCweight: %f\n", extADCweight);
+    // DBG_PRINTF("extADCweight: %f\n", extADCweight);
     
     // Update the maximum weight recorded
     if (abs(extADCweight) > abs(extADCweightMax))
     {
-      //Serial.printf("extADCweightMax: %f -> %f\n", extADCweightMax, extADCweight);
+      //DBG_PRINTF("extADCweightMax: %f -> %f\n", extADCweightMax, extADCweight);
       extADCweightMax = extADCweight;
     }
     extADCRunAV.add(extADCweight);
@@ -636,7 +647,7 @@ void TaskExtAnalogRead(void *pvParameters)
     if((millis() - msAtLastWeightChange > NO_ACTIVITY_THRESHOLD_MS) && (vinVolts > 5.1))  // If we are on battery (Vin>5.1V), power down.  Otherwise, assume we are USB powered and ignore idle timeout.
     {
       noActivityPowerDownFlag = true;
-      Serial.println("No activity - power down.");
+      DBG_PRINTLN("No activity - power down.");
       powerDown();
     }
     else 
@@ -661,11 +672,11 @@ void TaskIntAnalogRead(void *pvParameters)
     //dtostrf(vinVolts,4,2, vBuffer);  // Cannot use printf with floats with small task sizes (<2048) - so do this instead
     digitalWrite(VIN_LVL_EN, LOW);
     // print out the value you read:
-    //Serial.printf("Vin: %s\t", vBuffer);
+    //DBG_PRINTF("Vin: %s\t", vBuffer);
     //sensorValue = analogRead(V5_A_LVL)*PWR_5V_LVL_COUNTS_TO_V*INT_ADC_M_VAL+INT_ADC_B_VAL;
     v5vVolts = analogReadVoltage(V5_A_LVL)*PWR_5V_LVL_VDIV_SCLR;
     //dtostrf(v5vVolts,4,2, vBuffer);
-    //Serial.printf("5V_A: %s\n", vBuffer);
+    //DBG_PRINTF("5V_A: %s\n", vBuffer);
     vTaskDelay(INT_ADC_TASK_DELAY/portTICK_PERIOD_MS);
   }
 }
@@ -702,7 +713,7 @@ void TaskPowerZeroButton(void *pvParameters)
           // Long-press detected
           powerButtonStat = long_press;
           powerButtonFlag = long_press_flag;
-          Serial.printf("Long power/zero button press.\n");
+          DBG_PRINTF("Long power/zero button press.\n");
           // While user has button held down, don't do anything else
           while(digitalRead(PWR_ZERO_BTN))
           {
@@ -714,7 +725,7 @@ void TaskPowerZeroButton(void *pvParameters)
           // Short press detected
           powerButtonStat = short_press;
           powerButtonFlag = short_press_flag;
-          Serial.printf("Short power/zero button press.\n");
+          DBG_PRINTF("Short power/zero button press.\n");
         }
       }
       else
@@ -759,7 +770,7 @@ void TaskUnitButton(void *pvParameters)
           // Long-press detected
           unitButtonStat = long_press;
           unitButtonFlag = long_press_flag;
-          Serial.printf("Long unit button press.\n");
+          DBG_PRINTF("Long unit button press.\n");
           // While user has button held down, don't do anything else
           while(!digitalRead(UNIT_BTN))
           {
@@ -771,7 +782,7 @@ void TaskUnitButton(void *pvParameters)
           // Short press detected
           unitButtonStat = short_press;
           unitButtonFlag = short_press_flag;
-          Serial.printf("Short unit button press.\n");
+          DBG_PRINTF("Short unit button press.\n");
         }
       }
       else
@@ -815,7 +826,7 @@ void TaskBKLButton(void *pvParameters)
           // Long-press detected
           bklButtonStat = long_press;
           bklButtonFlag = long_press_flag;
-          Serial.printf("Long backlight button press.\n");
+          DBG_PRINTF("Long backlight button press.\n");
           // While user has button held down, don't do anything else
           while(!digitalRead(BKL_UP_BTN))
           {
@@ -827,7 +838,7 @@ void TaskBKLButton(void *pvParameters)
           // Short press detected
           bklButtonStat = short_press;
           bklButtonFlag = short_press_flag;
-          Serial.printf("Short backlight button press.\n");
+          DBG_PRINTF("Short backlight button press.\n");
         }
       }
       else
@@ -853,7 +864,7 @@ void UpdateWeightReadingLCD()
 
     //char vBuffer[7];
     //dtostrf(extADCweight,5,2, vBuffer);  // Cannot use printf with floats with small task sizes (<2048) - so do this instead
-    //Serial.printf("ExtADC: %s\n", vBuffer);
+    //DBG_PRINTF("ExtADC: %s\n", vBuffer);
 
     u8g2.clearBuffer();
     u8g2.setFont(WVAL_FONT);
@@ -903,7 +914,7 @@ void drawLogo(void)
 
 void doCalibration()
 {
-  Serial.println("Turning off weight update flag.");
+  DBG_PRINTLN("Turning off weight update flag.");
   updateLCDWeight = false;
   vTaskDelay(500/portTICK_PERIOD_MS); // Delay to allow LCD update task to finish and read updateLCDWeight flag
   u8g2.clearBuffer();
@@ -934,11 +945,11 @@ void doCalibration()
 
   if(unitButtonFlag != no_press_flag)
   {
-    Serial.printf("Calibration aborted.\n");
+    DBG_PRINTF("Calibration aborted.\n");
     // Reset button flags
     powerButtonFlag = no_press_flag;
     unitButtonFlag = no_press_flag;
-    Serial.println("Setting weight update flag.");
+    DBG_PRINTLN("Setting weight update flag.");
     updateLCDWeight = true;   
     return;
   }
@@ -971,7 +982,7 @@ void doCalibration()
     if (unitButtonFlag == short_press_flag)
     {
       // Change cal units
-      Serial.printf("Change cal unit flag set.\n");
+      DBG_PRINTF("Change cal unit flag set.\n");
       unitButtonFlag = no_press_flag;
       if(calUnit == kg) calUnit = lb;
       else if(calUnit == lb) calUnit = kg; 
@@ -1140,11 +1151,11 @@ void doCalibration()
   // Store span
   calValue = ((float)extADCResult - (float)zeroValue)/(float)calWeight;  
 
-  Serial.printf("extADCResult: %d\n", extADCResult);
-  Serial.printf("zeroValue: %d\n", zeroValue);
-  Serial.printf("calWeight: %u\n", calWeight);
-  Serial.printf("calValue: %f\n", calValue);
-  Serial.printf("calUnit: %s\n", unitAbbr[calUnit]);  
+  DBG_PRINTF("extADCResult: %d\n", extADCResult);
+  DBG_PRINTF("zeroValue: %d\n", zeroValue);
+  DBG_PRINTF("calWeight: %u\n", calWeight);
+  DBG_PRINTF("calValue: %f\n", calValue);
+  DBG_PRINTF("calUnit: %s\n", unitAbbr[calUnit]);  
 
   u8g2.clearBuffer();
   u8g2.setCursor(0, USER_MSG_Y_POS);
@@ -1170,7 +1181,7 @@ void doCalibration()
   // Reset button flags
   powerButtonFlag = no_press_flag;
   unitButtonFlag = no_press_flag;
-  Serial.println("Setting weight update flag.");
+  DBG_PRINTLN("Setting weight update flag.");
   updateLCDWeight = true;
 }
 
@@ -1186,7 +1197,7 @@ void sendBufferSPISafe(void)
   }
   else
   {
-    //Serial.println("Couldn't take SPI mutex.");
+    //DBG_PRINTLN("Couldn't take SPI mutex.");
   }
 }
 
@@ -1203,12 +1214,12 @@ void powerDown(void)
 
   if(EEPROMunitVal != unitVal) EEPROM.put(unitVal_eepromAdress, unitVal);
   if(EEPROMbacklightEnable != backlightEnable) EEPROM.put(backlightEnable_eepromAdress, backlightEnable);
-  Serial.printf("EEPROMextADCweightMax: %f\n", EEPROMextADCweightMax);
-  Serial.printf("extADCweightMax: %f\n", extADCweightMax);
+  DBG_PRINTF("EEPROMextADCweightMax: %f\n", EEPROMextADCweightMax);
+  DBG_PRINTF("extADCweightMax: %f\n", extADCweightMax);
   if(abs(extADCweightMax) > abs(EEPROMextADCweightMax))
   {
     EEPROM.put(extADCweightMax_eepromAdress, extADCweightMax);
-    Serial.printf("Updating extADCweightMax: %f", extADCweightMax);
+    DBG_PRINTF("Updating extADCweightMax: %f", extADCweightMax);
   }
   vTaskDelay(50/portTICK_PERIOD_MS);
   EEPROM.commit();  // Save our settings to EEPROM
