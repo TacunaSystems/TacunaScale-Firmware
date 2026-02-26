@@ -3,6 +3,7 @@
  */
 
 #include <Arduino.h>
+#include <EEPROM.h>
 #include "appconfig.h"
 #include "scpi_interface.h"
 #include "RunningAverage.h"
@@ -28,6 +29,7 @@ extern e_backlightEnable backlightEnable;
 extern const float kgtolbScalar;
 extern const String unitAbbr[];
 extern const uint8_t backlightPWM;
+extern const int zeroVal_eepromAdress;
 
 /* ------------------------------------------------------------------ */
 /*  SCPI interface callbacks                                          */
@@ -149,11 +151,14 @@ static scpi_result_t Conf_TareQ(scpi_t *context) {
     return SCPI_RES_OK;
 }
 
-/* CONFigure:ZERO — set current reading as zero */
+/* CONFigure:ZERO — set current ADC reading as the zero reference and persist */
 static scpi_result_t Conf_Zero(scpi_t *context) {
     (void) context;
-    tareValue = (extADCResult - zeroValue) / calValue;
+    zeroValue = extADCResult;
+    tareValue = 0;
     extADCRunAV.clear();
+    EEPROM.put(zeroVal_eepromAdress, zeroValue);
+    EEPROM.commit();
     return SCPI_RES_OK;
 }
 

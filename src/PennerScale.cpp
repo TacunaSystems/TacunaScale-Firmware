@@ -182,7 +182,7 @@ volatile bool newWeightReady = false;
 bool noActivityPowerDownFlag = false;
 
 const int calVal_eepromAdress = 0;
-const int zeroVal_eepromAdress = calVal_eepromAdress + sizeof(calValue);
+extern const int zeroVal_eepromAdress = calVal_eepromAdress + sizeof(calValue);
 const int backlightEnable_eepromAdress = zeroVal_eepromAdress + sizeof(zeroValue);
 const int unitVal_eepromAdress = backlightEnable_eepromAdress + sizeof(backlightEnable);
 const int calWeight_eepromAdress = unitVal_eepromAdress + sizeof(unitVal);
