@@ -220,6 +220,10 @@ void setup() {
 
   setCpuFrequencyMhz(REDUCED_CPU_SPEED);
 
+#if SCPI_DEBUG
+  dbg_log_init();
+#endif
+
   // Initialize serial communication at 115200 bits per second:
   // Explicitly set RX=44, TX=43 (UART0 default pins) to ensure GPIO matrix is configured
   Serial.begin(115200, SERIAL_8N1, 44, 43);

@@ -248,6 +248,32 @@ static scpi_result_t Sys_DiagListQ(scpi_t *context) {
 #endif // FREERTOS_DIAG
 
 /* ------------------------------------------------------------------ */
+/*  Debug log commands                                                */
+/* ------------------------------------------------------------------ */
+#if SCPI_DEBUG
+
+/* SYSTem:LOG? — read debug log ring buffer */
+static scpi_result_t Sys_LogQ(scpi_t *context) {
+    char buf[DBG_LOG_BUF_SIZE];
+    size_t n = dbg_read(buf, sizeof(buf));
+    if (n > 0) {
+        SCPI_ResultCharacters(context, buf, n);
+    } else {
+        SCPI_ResultCharacters(context, "(empty)", 7);
+    }
+    return SCPI_RES_OK;
+}
+
+/* SYSTem:LOG:CLEar — clear the debug log */
+static scpi_result_t Sys_LogClear(scpi_t *context) {
+    (void) context;
+    dbg_clear();
+    return SCPI_RES_OK;
+}
+
+#endif // SCPI_DEBUG
+
+/* ------------------------------------------------------------------ */
 /*  Command table                                                     */
 /* ------------------------------------------------------------------ */
 
@@ -307,6 +333,12 @@ static const scpi_command_t scpi_commands[] = {
     /* Diagnostics */
     { .pattern = "SYSTem:DIAGnostic:STATS?",     .callback = Sys_DiagStatsQ, },
     { .pattern = "SYSTem:DIAGnostic:LIST?",       .callback = Sys_DiagListQ, },
+#endif
+
+#if SCPI_DEBUG
+    /* Debug log */
+    { .pattern = "SYSTem:LOG?",                   .callback = Sys_LogQ, },
+    { .pattern = "SYSTem:LOG:CLEar",              .callback = Sys_LogClear, },
 #endif
 
     SCPI_CMD_LIST_END
