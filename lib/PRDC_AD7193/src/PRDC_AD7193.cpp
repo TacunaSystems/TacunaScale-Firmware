@@ -367,7 +367,7 @@ void PRDC_AD7193::waitReady() {
     Serial.println(F("waitReady()"));
   #endif
   while(digitalRead(_MISO)) {
-    vTaskDelay(1);  // Yield to FreeRTOS scheduler (~1ms between polls)
+    vTaskDelay(pdMS_TO_TICKS(1));  // Yield to FreeRTOS scheduler (~1ms between polls)
   }
 }
 
