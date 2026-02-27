@@ -29,6 +29,8 @@ extern e_backlightEnable backlightEnable;
 extern const float kgtolbScalar;
 extern const String unitAbbr[];
 extern const uint8_t backlightPWM;
+extern portMUX_TYPE measMux;
+
 /* ------------------------------------------------------------------ */
 /*  SCPI interface callbacks                                          */
 /* ------------------------------------------------------------------ */
@@ -85,7 +87,10 @@ static const scpi_choice_def_t unit_choices[] = {
 
 /* MEASure:WEIGht? — return averaged, unit-converted weight */
 static scpi_result_t Meas_WeightQ(scpi_t *context) {
-    SCPI_ResultFloat(context, extADCRunAV.getAverage());
+    taskENTER_CRITICAL(&measMux);
+    float avg = extADCRunAV.getAverage();
+    taskEXIT_CRITICAL(&measMux);
+    SCPI_ResultFloat(context, avg);
     return SCPI_RES_OK;
 }
 
@@ -109,7 +114,10 @@ static scpi_result_t Meas_WeightRawCh1Q(scpi_t *context) {
 
 /* MEASure:WEIGht:MAX? */
 static scpi_result_t Meas_WeightMaxQ(scpi_t *context) {
-    SCPI_ResultFloat(context, extADCweightMax);
+    taskENTER_CRITICAL(&measMux);
+    float max = extADCweightMax;
+    taskEXIT_CRITICAL(&measMux);
+    SCPI_ResultFloat(context, max);
     return SCPI_RES_OK;
 }
 
@@ -149,7 +157,10 @@ static scpi_result_t Conf_UnitQ(scpi_t *context) {
 
 /* CONFigure:TARE — perform tare */
 static scpi_result_t Conf_Tare(scpi_t *context) {
-    (void) context;
+    if (calValue == 0.0f) {
+        SCPI_ErrorPush(context, SCPI_ERROR_EXECUTION_ERROR);
+        return SCPI_RES_ERR;
+    }
     tareValue = (extADCResult - zeroValue) / calValue;
     extADCRunAV.clear();
     return SCPI_RES_OK;
@@ -181,10 +192,14 @@ static scpi_result_t Cal_ValueQ(scpi_t *context) {
     return SCPI_RES_OK;
 }
 
-/* CALibration:VALue <float> — set calibration factor and persist */
+/* CALibration:VALue <float> — set calibration factor and persist (must be > 0) */
 static scpi_result_t Cal_Value(scpi_t *context) {
     scpi_number_t val;
     if (!SCPI_ParamNumber(context, scpi_special_numbers_def, &val, TRUE)) {
+        return SCPI_RES_ERR;
+    }
+    if (val.content.value <= 0.0) {
+        SCPI_ErrorPush(context, SCPI_ERROR_ILLEGAL_PARAMETER_VALUE);
         return SCPI_RES_ERR;
     }
     calValue = (float) val.content.value;
@@ -320,7 +335,7 @@ static scpi_result_t Sys_EepromQ(scpi_t *context) {
 
 /* SYSTem:DIAGnostic:STATS? — CPU run-time percentage per task */
 static scpi_result_t Sys_DiagStatsQ(scpi_t *context) {
-    char buf[512];
+    static char buf[512];
     vTaskGetRunTimeStats(buf);
     SCPI_ResultCharacters(context, buf, strlen(buf));
     return SCPI_RES_OK;
@@ -328,7 +343,7 @@ static scpi_result_t Sys_DiagStatsQ(scpi_t *context) {
 
 /* SYSTem:DIAGnostic:LIST? — task state, priority, stack watermark */
 static scpi_result_t Sys_DiagListQ(scpi_t *context) {
-    char buf[512];
+    static char buf[512];
     vTaskList(buf);
     SCPI_ResultCharacters(context, buf, strlen(buf));
     return SCPI_RES_OK;
@@ -343,7 +358,7 @@ static scpi_result_t Sys_DiagListQ(scpi_t *context) {
 
 /* SYSTem:LOG? — read debug log ring buffer */
 static scpi_result_t Sys_LogQ(scpi_t *context) {
-    char buf[DBG_LOG_BUF_SIZE];
+    static char buf[DBG_LOG_BUF_SIZE];
     size_t n = dbg_read(buf, sizeof(buf));
     if (n > 0) {
         SCPI_ResultCharacters(context, buf, n);

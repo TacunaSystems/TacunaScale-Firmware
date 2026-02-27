@@ -147,6 +147,7 @@ float removeNegativeSignFromZero(float weightValue);
 float analogReadVoltage(byte pin);
 
 SemaphoreHandle_t SPImutex = xSemaphoreCreateMutex();
+portMUX_TYPE measMux = portMUX_INITIALIZER_UNLOCKED;  // Spinlock for measurement data shared with SCPI
 
 // Global variables
 RunningAverage extADCRunAV(EXT_ADC_AVG_SAMPLE_NUM);
@@ -626,19 +627,20 @@ void TaskExtAnalogRead(void *pvParameters)
       
     // If DIP switch 1 is off (logic high), then scale is configured for single channel.  Otherwise use both channels.
     if(configSwitch1) extADCResult = extADCResultCh0; else extADCResult = extADCResultCh0 + extADCResultCh1;
-    extADCweight = (extADCResult - zeroValue)/calValue  - tareValue;
+    extADCweight = (calValue != 0.0f) ? (extADCResult - zeroValue)/calValue - tareValue : 0.0f;
     if(calUnit == lb && unitVal == kg) extADCweight = extADCweight / kgtolbScalar;
     else if(calUnit == kg && unitVal == lb) extADCweight = extADCweight * kgtolbScalar;
     extADCweight = removeNegativeSignFromZero(extADCweight);
     // DBG_PRINTF("extADCweight: %f\n", extADCweight);
-    
-    // Update the maximum weight recorded
+
+    // Update shared measurement data (synchronized with SCPI reads)
+    taskENTER_CRITICAL(&measMux);
     if (abs(extADCweight) > abs(extADCweightMax))
     {
-      //DBG_PRINTF("extADCweightMax: %f -> %f\n", extADCweightMax, extADCweight);
       extADCweightMax = extADCweight;
     }
     extADCRunAV.add(extADCweight);
+    taskEXIT_CRITICAL(&measMux);
 
     // Signal UI task that new weight data is available
     newWeightReady = true;
