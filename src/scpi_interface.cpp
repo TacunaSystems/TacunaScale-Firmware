@@ -199,6 +199,7 @@ static scpi_result_t Conf_Zero(scpi_t *context) {
 /*  Calibration commands                                              */
 /* ------------------------------------------------------------------ */
 
+/* CALibration:VALue? — query calibration factor */
 static scpi_result_t Cal_ValueQ(scpi_t *context) {
     SCPI_ResultFloat(context, calValue);
     return SCPI_RES_OK;
@@ -220,6 +221,7 @@ static scpi_result_t Cal_Value(scpi_t *context) {
     return SCPI_RES_OK;
 }
 
+/* CALibration:ZERO? — query zero-reference ADC value */
 static scpi_result_t Cal_ZeroQ(scpi_t *context) {
     SCPI_ResultInt32(context, zeroValue);
     return SCPI_RES_OK;
@@ -237,6 +239,7 @@ static scpi_result_t Cal_Zero(scpi_t *context) {
     return SCPI_RES_OK;
 }
 
+/* CALibration:WEIGht? — query calibration weight */
 static scpi_result_t Cal_WeightQ(scpi_t *context) {
     SCPI_ResultUInt32(context, calWeight);
     return SCPI_RES_OK;
@@ -258,6 +261,7 @@ static scpi_result_t Cal_Weight(scpi_t *context) {
     return SCPI_RES_OK;
 }
 
+/* CALibration:UNIT? — query calibration unit */
 static scpi_result_t Cal_UnitQ(scpi_t *context) {
     const char *name = NULL;
     SCPI_ChoiceToName(unit_choices, (int32_t) calUnit, &name);
