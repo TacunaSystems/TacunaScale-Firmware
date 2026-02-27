@@ -411,6 +411,13 @@ static scpi_result_t Sys_EepromQ(scpi_t *context) {
     return SCPI_RES_OK;
 }
 
+/* SYSTem:EEPROM:COMMit — flush any pending EEPROM writes to flash */
+static scpi_result_t Sys_EepromCommit(scpi_t *context) {
+    (void) context;
+    EEPROM.commit();
+    return SCPI_RES_OK;
+}
+
 /* ------------------------------------------------------------------ */
 /*  FreeRTOS diagnostic commands                                      */
 /* ------------------------------------------------------------------ */
@@ -527,6 +534,7 @@ static const scpi_command_t scpi_commands[] = {
     { .pattern = "SYSTem:PROMpt",                 .callback = Sys_Prompt, },
     { .pattern = "SYSTem:PROMpt?",                .callback = Sys_PromptQ, },
     { .pattern = "SYSTem:EEPROM?",                .callback = Sys_EepromQ, },
+    { .pattern = "SYSTem:EEPROM:COMMit",         .callback = Sys_EepromCommit, },
 
 #if FREERTOS_DIAG
     /* Diagnostics */

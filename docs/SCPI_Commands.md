@@ -87,6 +87,7 @@ All set commands persist immediately to EEPROM.
 | `SYSTem:PROMpt <ON\|OFF>` | Enable/disable prompt after responses (persists to EEPROM) | Boolean |
 | `SYSTem:PROMpt?` | Query prompt state | — |
 | `SYSTem:EEPROM?` | Dump all EEPROM values (comma-separated key=value pairs) | — |
+| `SYSTem:EEPROM:COMMit` | Flush pending EEPROM writes to flash | — |
 
 ## Diagnostic Commands
 
