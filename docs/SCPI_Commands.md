@@ -77,6 +77,8 @@ All set commands persist immediately to EEPROM.
 |---------|-------------|-----------|
 | `SYSTem:BACKlight <ON\|OFF>` | Turn LCD backlight on/off | Boolean |
 | `SYSTem:BACKlight?` | Query backlight state | — |
+| `SYSTem:BACKlight:PWM <0-100>` | Set backlight PWM duty cycle (percent, persists to EEPROM) | Int (0-100) |
+| `SYSTem:BACKlight:PWM?` | Query backlight PWM duty cycle (percent) | — |
 | `SYSTem:POWer:VOLTage:BATTery?` | Battery input voltage | — |
 | `SYSTem:POWer:VOLTage:SUPPly?` | 5V rail voltage | — |
 | `SYSTem:POWer:DOWN` | Trigger power-down sequence | — |
@@ -114,6 +116,7 @@ reads all fields directly from flash.
 | 16 | calWeight | uint32_t | `CAL:WEIG`, calibration routine |
 | 20 | calUnit | enum (int) | `CAL:UNIT`, calibration routine |
 | 24 | extADCweightMax | float | `MEAS:WEIG:MAX`, power-down |
+| 28 | backlightPWM | uint8_t | `SYST:BACK:PWM`, power-down |
 
 ## Examples
 
@@ -134,7 +137,7 @@ CONF:UNIT LB
 
 # Read all EEPROM values
 SYST:EEPROM?
-→ calValue=7168.220215,zeroValue=8295856,backlight=1,unit=KG,calWeight=100,calUnit=KG,weightMax=25.4321
+→ calValue=7168.220215,zeroValue=8295856,backlight=1,unit=KG,calWeight=100,calUnit=KG,weightMax=25.4321,backlightPWM=31
 
 # Reset peak weight
 MEAS:WEIG:MAX 0

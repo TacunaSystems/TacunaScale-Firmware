@@ -163,9 +163,14 @@ bool configSwitch1 = 0;
 bool configSwitch2 = 0;
 
 e_backlightEnable backlightEnable = off;
+uint8_t backlightPWM = BACKLIGHT_PWM_DEFAULT;  // 0-100 percent
 // setting PWM properties
 const uint32_t backlightPWMfreq = 5000;
 const uint8_t backlightPWMres = 8;
+
+static inline uint8_t pwmPercentToDuty(uint8_t pct) {
+    return (uint8_t)((uint16_t)pct * 255 / 100);
+}
 
 e_unitVal unitVal = DEFAULT_UNIT;
 
@@ -297,7 +302,11 @@ void setup() {
   }
   if (!isnan(EEPROMextADCweightMax)) extADCweightMax = EEPROMextADCweightMax;
 
-  ledcWrite(LCD_BACKLIGHT, BACKLIGHT_PWM * backlightEnable);
+  uint8_t EEPROMbacklightPWM;
+  EEPROM.get(EEPROM_ADDR_BACKLIGHT_PWM, EEPROMbacklightPWM);
+  if (EEPROMbacklightPWM <= 100) backlightPWM = EEPROMbacklightPWM;
+
+  ledcWrite(LCD_BACKLIGHT, pwmPercentToDuty(backlightPWM) * (backlightEnable != off));
 
   // Initialize shared SPI bus once (FSPI/SPI2 IOMUX pins — optimal for HW SPI)
   SPI.begin(SCLK, MISO, MOSI, -1);  // No automatic SS — CS managed per-device
@@ -328,6 +337,7 @@ void setup() {
   DBG_PRINTF("Default calVal: %f\n\r", calValue);
   DBG_PRINTF("Default zeroVal: %d\n\r", zeroValue);
   DBG_PRINTF("Default backlightEnable: %d\n\r", backlightEnable);
+  DBG_PRINTF("Default backlightPWM: %d%%\n\r", backlightPWM);
   DBG_PRINTF("Default unitVal: %d\n\r", unitVal);
   DBG_PRINTF("Default calWeight: %u\n\r", calWeight);
   DBG_PRINTF("Default calUnit: %d\n\r", calUnit);
@@ -556,7 +566,7 @@ void TaskUI(void *pvParameters)
       //else if(backlightEnable == on) backlightEnable = on_motion;
       //else if(backlightEnable == on_motion) backlightEnable = off;        
       DBG_PRINTF("Backlight toggle flag set. Backlight = %d\n", backlightEnable);
-      ledcWrite(LCD_BACKLIGHT, BACKLIGHT_PWM * backlightEnable);
+      ledcWrite(LCD_BACKLIGHT, pwmPercentToDuty(backlightPWM) * (backlightEnable != off));
 
     }
     else if(bklButtonFlag == long_press_flag)
@@ -1203,14 +1213,17 @@ void powerDown(void)
   e_backlightEnable EEPROMbacklightEnable;
   e_unitVal EEPROMunitVal;
   float EEPROMextADCweightMax;
+  uint8_t EEPROMbacklightPWM;
 
   // Check EEPROM values and update if necessary
   EEPROM.get(EEPROM_ADDR_BACKLIGHT, EEPROMbacklightEnable);
   EEPROM.get(EEPROM_ADDR_UNIT_VAL, EEPROMunitVal);
   EEPROM.get(EEPROM_ADDR_WEIGHT_MAX, EEPROMextADCweightMax);
+  EEPROM.get(EEPROM_ADDR_BACKLIGHT_PWM, EEPROMbacklightPWM);
 
   if(EEPROMunitVal != unitVal) EEPROM.put(EEPROM_ADDR_UNIT_VAL, unitVal);
   if(EEPROMbacklightEnable != backlightEnable) EEPROM.put(EEPROM_ADDR_BACKLIGHT, backlightEnable);
+  if(EEPROMbacklightPWM != backlightPWM) EEPROM.put(EEPROM_ADDR_BACKLIGHT_PWM, backlightPWM);
   DBG_PRINTF("EEPROMextADCweightMax: %f\n", EEPROMextADCweightMax);
   DBG_PRINTF("extADCweightMax: %f\n", extADCweightMax);
   if(abs(extADCweightMax) > abs(EEPROMextADCweightMax))

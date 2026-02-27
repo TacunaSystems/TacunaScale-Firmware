@@ -13,8 +13,8 @@
 #endif
 
 // LCD backlight
-#define LCD_BACKLIGHT     14
-#define BACKLIGHT_PWM     80
+#define LCD_BACKLIGHT         14
+#define BACKLIGHT_PWM_DEFAULT 31  // percent (31% ≈ 80/255)
 
 // Unit enumerations
 enum e_backlightEnable {off = 0, on = 1, on_motion = 2};
@@ -28,6 +28,7 @@ enum e_unitVal {kg = 0, lb = 1};
 #define EEPROM_ADDR_CAL_WEIGHT   (EEPROM_ADDR_UNIT_VAL   + (int)sizeof(e_unitVal))
 #define EEPROM_ADDR_CAL_UNIT     (EEPROM_ADDR_CAL_WEIGHT + (int)sizeof(uint32_t))
 #define EEPROM_ADDR_WEIGHT_MAX   (EEPROM_ADDR_CAL_UNIT   + (int)sizeof(e_unitVal))
+#define EEPROM_ADDR_BACKLIGHT_PWM (EEPROM_ADDR_WEIGHT_MAX + (int)sizeof(float))
 
 // Debug logging — messages go to a RAM ring buffer readable via SYST:LOG?
 // Set SCPI_DEBUG to 0 to compile out all debug logging.
