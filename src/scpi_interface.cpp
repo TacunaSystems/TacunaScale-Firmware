@@ -29,8 +29,6 @@ extern e_backlightEnable backlightEnable;
 extern const float kgtolbScalar;
 extern const String unitAbbr[];
 extern const uint8_t backlightPWM;
-extern const int zeroVal_eepromAdress;
-
 /* ------------------------------------------------------------------ */
 /*  SCPI interface callbacks                                          */
 /* ------------------------------------------------------------------ */
@@ -115,6 +113,18 @@ static scpi_result_t Meas_WeightMaxQ(scpi_t *context) {
     return SCPI_RES_OK;
 }
 
+/* MEASure:WEIGht:MAX <float> — set/reset peak weight and persist */
+static scpi_result_t Meas_WeightMax(scpi_t *context) {
+    scpi_number_t val;
+    if (!SCPI_ParamNumber(context, scpi_special_numbers_def, &val, TRUE)) {
+        return SCPI_RES_ERR;
+    }
+    extADCweightMax = (float) val.content.value;
+    EEPROM.put(EEPROM_ADDR_WEIGHT_MAX, extADCweightMax);
+    EEPROM.commit();
+    return SCPI_RES_OK;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Configuration commands                                            */
 /* ------------------------------------------------------------------ */
@@ -157,17 +167,29 @@ static scpi_result_t Conf_Zero(scpi_t *context) {
     zeroValue = extADCResult;
     tareValue = 0;
     extADCRunAV.clear();
-    EEPROM.put(zeroVal_eepromAdress, zeroValue);
+    EEPROM.put(EEPROM_ADDR_ZERO_VALUE, zeroValue);
     EEPROM.commit();
     return SCPI_RES_OK;
 }
 
 /* ------------------------------------------------------------------ */
-/*  Calibration read-only commands                                    */
+/*  Calibration commands                                              */
 /* ------------------------------------------------------------------ */
 
 static scpi_result_t Cal_ValueQ(scpi_t *context) {
     SCPI_ResultFloat(context, calValue);
+    return SCPI_RES_OK;
+}
+
+/* CALibration:VALue <float> — set calibration factor and persist */
+static scpi_result_t Cal_Value(scpi_t *context) {
+    scpi_number_t val;
+    if (!SCPI_ParamNumber(context, scpi_special_numbers_def, &val, TRUE)) {
+        return SCPI_RES_ERR;
+    }
+    calValue = (float) val.content.value;
+    EEPROM.put(EEPROM_ADDR_CAL_VALUE, calValue);
+    EEPROM.commit();
     return SCPI_RES_OK;
 }
 
@@ -176,8 +198,32 @@ static scpi_result_t Cal_ZeroQ(scpi_t *context) {
     return SCPI_RES_OK;
 }
 
+/* CALibration:ZERO <int32> — set zero reference directly and persist */
+static scpi_result_t Cal_Zero(scpi_t *context) {
+    int32_t val;
+    if (!SCPI_ParamInt32(context, &val, TRUE)) {
+        return SCPI_RES_ERR;
+    }
+    zeroValue = val;
+    EEPROM.put(EEPROM_ADDR_ZERO_VALUE, zeroValue);
+    EEPROM.commit();
+    return SCPI_RES_OK;
+}
+
 static scpi_result_t Cal_WeightQ(scpi_t *context) {
     SCPI_ResultUInt32(context, calWeight);
+    return SCPI_RES_OK;
+}
+
+/* CALibration:WEIGht <uint32> — set calibration weight and persist */
+static scpi_result_t Cal_Weight(scpi_t *context) {
+    int32_t val;
+    if (!SCPI_ParamInt32(context, &val, TRUE)) {
+        return SCPI_RES_ERR;
+    }
+    calWeight = (uint32_t) val;
+    EEPROM.put(EEPROM_ADDR_CAL_WEIGHT, calWeight);
+    EEPROM.commit();
     return SCPI_RES_OK;
 }
 
@@ -185,6 +231,18 @@ static scpi_result_t Cal_UnitQ(scpi_t *context) {
     const char *name;
     SCPI_ChoiceToName(unit_choices, (int32_t) calUnit, &name);
     SCPI_ResultCharacters(context, name, strlen(name));
+    return SCPI_RES_OK;
+}
+
+/* CALibration:UNIT <KG|LB> — set calibration unit and persist */
+static scpi_result_t Cal_Unit(scpi_t *context) {
+    int32_t val;
+    if (!SCPI_ParamChoice(context, unit_choices, &val, TRUE)) {
+        return SCPI_RES_ERR;
+    }
+    calUnit = (e_unitVal) val;
+    EEPROM.put(EEPROM_ADDR_CAL_UNIT, calUnit);
+    EEPROM.commit();
     return SCPI_RES_OK;
 }
 
@@ -227,6 +285,32 @@ static scpi_result_t Sys_PowerDown(scpi_t *context) {
     (void) context;
     powerDown();
     return SCPI_RES_OK;  /* may not be reached */
+}
+
+/* SYSTem:EEPROM? — dump all persisted EEPROM values */
+static scpi_result_t Sys_EepromQ(scpi_t *context) {
+    float            ee_calValue;   EEPROM.get(EEPROM_ADDR_CAL_VALUE,  ee_calValue);
+    int32_t          ee_zeroValue;  EEPROM.get(EEPROM_ADDR_ZERO_VALUE, ee_zeroValue);
+    e_backlightEnable ee_backlight; EEPROM.get(EEPROM_ADDR_BACKLIGHT,  ee_backlight);
+    e_unitVal        ee_unit;       EEPROM.get(EEPROM_ADDR_UNIT_VAL,   ee_unit);
+    uint32_t         ee_calWeight;  EEPROM.get(EEPROM_ADDR_CAL_WEIGHT, ee_calWeight);
+    e_unitVal        ee_calUnit;    EEPROM.get(EEPROM_ADDR_CAL_UNIT,   ee_calUnit);
+    float            ee_weightMax;  EEPROM.get(EEPROM_ADDR_WEIGHT_MAX, ee_weightMax);
+
+    const char *unit_name = NULL, *cal_unit_name = NULL;
+    SCPI_ChoiceToName(unit_choices, (int32_t) ee_unit, &unit_name);
+    SCPI_ChoiceToName(unit_choices, (int32_t) ee_calUnit, &cal_unit_name);
+
+    char buf[256];
+    snprintf(buf, sizeof(buf),
+        "calValue=%.6f,zeroValue=%ld,backlight=%d,unit=%s,"
+        "calWeight=%lu,calUnit=%s,weightMax=%.4f",
+        (double) ee_calValue, (long) ee_zeroValue, (int) ee_backlight,
+        unit_name ? unit_name : "?",
+        (unsigned long) ee_calWeight, cal_unit_name ? cal_unit_name : "?",
+        (double) ee_weightMax);
+    SCPI_ResultCharacters(context, buf, strlen(buf));
+    return SCPI_RES_OK;
 }
 
 /* ------------------------------------------------------------------ */
@@ -312,6 +396,7 @@ static const scpi_command_t scpi_commands[] = {
     { .pattern = "MEASure:WEIGht:RAW?",      .callback = Meas_WeightRawQ, },
     { .pattern = "MEASure:WEIGht:RAW:CH0?",  .callback = Meas_WeightRawCh0Q, },
     { .pattern = "MEASure:WEIGht:RAW:CH1?",  .callback = Meas_WeightRawCh1Q, },
+    { .pattern = "MEASure:WEIGht:MAX",        .callback = Meas_WeightMax, },
     { .pattern = "MEASure:WEIGht:MAX?",       .callback = Meas_WeightMaxQ, },
 
     /* Configuration */
@@ -321,10 +406,14 @@ static const scpi_command_t scpi_commands[] = {
     { .pattern = "CONFigure:TARE?",  .callback = Conf_TareQ, },
     { .pattern = "CONFigure:ZERO",   .callback = Conf_Zero, },
 
-    /* Calibration (read-only) */
+    /* Calibration */
+    { .pattern = "CALibration:VALue",   .callback = Cal_Value, },
     { .pattern = "CALibration:VALue?",  .callback = Cal_ValueQ, },
+    { .pattern = "CALibration:ZERO",    .callback = Cal_Zero, },
     { .pattern = "CALibration:ZERO?",   .callback = Cal_ZeroQ, },
+    { .pattern = "CALibration:WEIGht",  .callback = Cal_Weight, },
     { .pattern = "CALibration:WEIGht?", .callback = Cal_WeightQ, },
+    { .pattern = "CALibration:UNIT",    .callback = Cal_Unit, },
     { .pattern = "CALibration:UNIT?",   .callback = Cal_UnitQ, },
 
     /* System */
@@ -333,6 +422,7 @@ static const scpi_command_t scpi_commands[] = {
     { .pattern = "SYSTem:POWer:VOLTage:BATTery?", .callback = Sys_VbattQ, },
     { .pattern = "SYSTem:POWer:VOLTage:SUPPly?",  .callback = Sys_VsuppQ, },
     { .pattern = "SYSTem:POWer:DOWN",              .callback = Sys_PowerDown, },
+    { .pattern = "SYSTem:EEPROM?",                .callback = Sys_EepromQ, },
 
 #if FREERTOS_DIAG
     /* Diagnostics */

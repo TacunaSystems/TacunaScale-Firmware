@@ -181,13 +181,7 @@ bool updateLCDWeight = true;
 volatile bool newWeightReady = false;
 bool noActivityPowerDownFlag = false;
 
-const int calVal_eepromAdress = 0;
-extern const int zeroVal_eepromAdress = calVal_eepromAdress + sizeof(calValue);
-const int backlightEnable_eepromAdress = zeroVal_eepromAdress + sizeof(zeroValue);
-const int unitVal_eepromAdress = backlightEnable_eepromAdress + sizeof(backlightEnable);
-const int calWeight_eepromAdress = unitVal_eepromAdress + sizeof(unitVal);
-const int calUnit_eepromAdress = calWeight_eepromAdress + sizeof(calWeight);
-const int extADCweightMax_eepromAdress = calUnit_eepromAdress + sizeof(calUnit);
+/* EEPROM addresses are defined as macros in appconfig.h */
 
 enum e_buttonStat {no_press = 0, is_pressed = 1, short_press = 2, long_press = 3};
 e_buttonStat powerButtonStat = no_press;  // Used to track immediate button status
@@ -276,13 +270,13 @@ void setup() {
   configSwitch2 = digitalRead(SW_2);
 
   EEPROM.begin(512);
-  EEPROM.get(calVal_eepromAdress, EEPROMcalValue);
-  EEPROM.get(zeroVal_eepromAdress, EEPROMZeroValue);
-  EEPROM.get(backlightEnable_eepromAdress, EEPROMbacklightEnable);
-  EEPROM.get(unitVal_eepromAdress, EEPROMunitVal);  
-  EEPROM.get(calWeight_eepromAdress, EEPROMcalWeight);
-  EEPROM.get(calUnit_eepromAdress, EEPROMcalUnit);
-  EEPROM.get(extADCweightMax_eepromAdress, EEPROMextADCweightMax);
+  EEPROM.get(EEPROM_ADDR_CAL_VALUE, EEPROMcalValue);
+  EEPROM.get(EEPROM_ADDR_ZERO_VALUE, EEPROMZeroValue);
+  EEPROM.get(EEPROM_ADDR_BACKLIGHT, EEPROMbacklightEnable);
+  EEPROM.get(EEPROM_ADDR_UNIT_VAL, EEPROMunitVal);  
+  EEPROM.get(EEPROM_ADDR_CAL_WEIGHT, EEPROMcalWeight);
+  EEPROM.get(EEPROM_ADDR_CAL_UNIT, EEPROMcalUnit);
+  EEPROM.get(EEPROM_ADDR_WEIGHT_MAX, EEPROMextADCweightMax);
 
   // If calValue is a real number, that means we've calibrated the unit and calValue and zeroValue are legitimate values
   if ((!isnan(EEPROMcalValue)) && (EEPROMcalValue>0))
@@ -338,7 +332,7 @@ void setup() {
   DBG_PRINTF("Default calWeight: %u\n\r", calWeight);
   DBG_PRINTF("Default calUnit: %d\n\r", calUnit);
   
-  DBG_PRINTF("Max EEPROM address: %d\n\r", extADCweightMax_eepromAdress);
+  DBG_PRINTF("Max EEPROM address: %d\n\r", EEPROM_ADDR_WEIGHT_MAX);
   DBG_PRINTF("EEPROM calVal: %f\n\r", EEPROMcalValue);
   DBG_PRINTF("EEPROM zeroVal: %d\n\r", EEPROMZeroValue);  
   DBG_PRINTF("EEPROM backlightEnable: %d\n\r", EEPROMbacklightEnable);
@@ -1061,8 +1055,8 @@ void doCalibration()
   }
 
   // Commit calWeight and calUnit to EEPROM
-  EEPROM.put(calWeight_eepromAdress, calWeight);
-  EEPROM.put(calUnit_eepromAdress, calUnit);  
+  EEPROM.put(EEPROM_ADDR_CAL_WEIGHT, calWeight);
+  EEPROM.put(EEPROM_ADDR_CAL_UNIT, calUnit);  
   EEPROM.commit();
 
   // Reset button flags
@@ -1182,9 +1176,9 @@ void doCalibration()
   extADCRunAV.clear();
   // Newly calibrated scale - do not need tare
   tareValue = 0;
-  EEPROM.put(calVal_eepromAdress, calValue);
-  EEPROM.put(calUnit_eepromAdress, calUnit);
-  EEPROM.put(zeroVal_eepromAdress, zeroValue);
+  EEPROM.put(EEPROM_ADDR_CAL_VALUE, calValue);
+  EEPROM.put(EEPROM_ADDR_CAL_UNIT, calUnit);
+  EEPROM.put(EEPROM_ADDR_ZERO_VALUE, zeroValue);
   EEPROM.commit();
 
   // Reset button flags
@@ -1210,17 +1204,17 @@ void powerDown(void)
   float EEPROMextADCweightMax;
 
   // Check EEPROM values and update if necessary
-  EEPROM.get(backlightEnable_eepromAdress, EEPROMbacklightEnable);
-  EEPROM.get(unitVal_eepromAdress, EEPROMunitVal);
-  EEPROM.get(extADCweightMax_eepromAdress, EEPROMextADCweightMax);
+  EEPROM.get(EEPROM_ADDR_BACKLIGHT, EEPROMbacklightEnable);
+  EEPROM.get(EEPROM_ADDR_UNIT_VAL, EEPROMunitVal);
+  EEPROM.get(EEPROM_ADDR_WEIGHT_MAX, EEPROMextADCweightMax);
 
-  if(EEPROMunitVal != unitVal) EEPROM.put(unitVal_eepromAdress, unitVal);
-  if(EEPROMbacklightEnable != backlightEnable) EEPROM.put(backlightEnable_eepromAdress, backlightEnable);
+  if(EEPROMunitVal != unitVal) EEPROM.put(EEPROM_ADDR_UNIT_VAL, unitVal);
+  if(EEPROMbacklightEnable != backlightEnable) EEPROM.put(EEPROM_ADDR_BACKLIGHT, backlightEnable);
   DBG_PRINTF("EEPROMextADCweightMax: %f\n", EEPROMextADCweightMax);
   DBG_PRINTF("extADCweightMax: %f\n", extADCweightMax);
   if(abs(extADCweightMax) > abs(EEPROMextADCweightMax))
   {
-    EEPROM.put(extADCweightMax_eepromAdress, extADCweightMax);
+    EEPROM.put(EEPROM_ADDR_WEIGHT_MAX, extADCweightMax);
     DBG_PRINTF("Updating extADCweightMax: %f", extADCweightMax);
   }
   vTaskDelay(50/portTICK_PERIOD_MS);

@@ -19,6 +19,15 @@
 enum e_backlightEnable {off = 0, on = 1, on_motion = 2};
 enum e_unitVal {kg = 0, lb = 1};
 
+// EEPROM address map (shared between PennerScale.cpp and scpi_interface.cpp)
+#define EEPROM_ADDR_CAL_VALUE    0
+#define EEPROM_ADDR_ZERO_VALUE   (EEPROM_ADDR_CAL_VALUE  + (int)sizeof(float))
+#define EEPROM_ADDR_BACKLIGHT    (EEPROM_ADDR_ZERO_VALUE + (int)sizeof(int32_t))
+#define EEPROM_ADDR_UNIT_VAL     (EEPROM_ADDR_BACKLIGHT  + (int)sizeof(e_backlightEnable))
+#define EEPROM_ADDR_CAL_WEIGHT   (EEPROM_ADDR_UNIT_VAL   + (int)sizeof(e_unitVal))
+#define EEPROM_ADDR_CAL_UNIT     (EEPROM_ADDR_CAL_WEIGHT + (int)sizeof(uint32_t))
+#define EEPROM_ADDR_WEIGHT_MAX   (EEPROM_ADDR_CAL_UNIT   + (int)sizeof(e_unitVal))
+
 // Debug logging — messages go to a RAM ring buffer readable via SYST:LOG?
 // Set SCPI_DEBUG to 0 to compile out all debug logging.
 #ifndef SCPI_DEBUG
