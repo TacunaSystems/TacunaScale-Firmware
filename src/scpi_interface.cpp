@@ -27,6 +27,8 @@ extern float   vinVolts;
 extern float   v5vVolts;
 extern e_backlightEnable backlightEnable;
 extern uint8_t backlightPWM;
+extern bool scpiEchoEnable;
+extern bool scpiPromptEnable;
 extern const float kgtolbScalar;
 extern const String unitAbbr[];
 extern portMUX_TYPE measMux;
@@ -43,6 +45,9 @@ static size_t SCPI_Write(scpi_t *context, const char *data, size_t len) {
 static scpi_result_t SCPI_Flush(scpi_t *context) {
     (void) context;
     Serial.flush();
+    if (scpiPromptEnable) {
+        Serial.print("> ");
+    }
     return SCPI_RES_OK;
 }
 
@@ -319,6 +324,38 @@ static scpi_result_t Sys_BacklightPWMQ(scpi_t *context) {
     return SCPI_RES_OK;
 }
 
+/* SYSTem:ECHO <ON|OFF> */
+static scpi_result_t Sys_Echo(scpi_t *context) {
+    scpi_bool_t val;
+    if (!SCPI_ParamBool(context, &val, TRUE)) return SCPI_RES_ERR;
+    scpiEchoEnable = (bool) val;
+    EEPROM.put(EEPROM_ADDR_ECHO, (uint8_t) scpiEchoEnable);
+    EEPROM.commit();
+    return SCPI_RES_OK;
+}
+
+/* SYSTem:ECHO? */
+static scpi_result_t Sys_EchoQ(scpi_t *context) {
+    SCPI_ResultBool(context, scpiEchoEnable);
+    return SCPI_RES_OK;
+}
+
+/* SYSTem:PROMpt <ON|OFF> */
+static scpi_result_t Sys_Prompt(scpi_t *context) {
+    scpi_bool_t val;
+    if (!SCPI_ParamBool(context, &val, TRUE)) return SCPI_RES_ERR;
+    scpiPromptEnable = (bool) val;
+    EEPROM.put(EEPROM_ADDR_PROMPT, (uint8_t) scpiPromptEnable);
+    EEPROM.commit();
+    return SCPI_RES_OK;
+}
+
+/* SYSTem:PROMpt? */
+static scpi_result_t Sys_PromptQ(scpi_t *context) {
+    SCPI_ResultBool(context, scpiPromptEnable);
+    return SCPI_RES_OK;
+}
+
 /* SYSTem:POWer:VOLTage:BATTery? */
 static scpi_result_t Sys_VbattQ(scpi_t *context) {
     SCPI_ResultFloat(context, vinVolts);
@@ -349,6 +386,8 @@ static scpi_result_t Sys_EepromQ(scpi_t *context) {
     e_unitVal        ee_calUnit;    EEPROM.get(EEPROM_ADDR_CAL_UNIT,   ee_calUnit);
     float            ee_weightMax;  EEPROM.get(EEPROM_ADDR_WEIGHT_MAX, ee_weightMax);
     uint8_t          ee_backlightPWM; EEPROM.get(EEPROM_ADDR_BACKLIGHT_PWM, ee_backlightPWM);
+    uint8_t          ee_echo;   EEPROM.get(EEPROM_ADDR_ECHO,   ee_echo);
+    uint8_t          ee_prompt; EEPROM.get(EEPROM_ADDR_PROMPT,  ee_prompt);
 
     const char *unit_name = NULL, *cal_unit_name = NULL;
     SCPI_ChoiceToName(unit_choices, (int32_t) ee_unit, &unit_name);
@@ -357,11 +396,13 @@ static scpi_result_t Sys_EepromQ(scpi_t *context) {
     char buf[256];
     snprintf(buf, sizeof(buf),
         "calValue=%.6f,zeroValue=%ld,backlight=%d,unit=%s,"
-        "calWeight=%lu,calUnit=%s,weightMax=%.4f,backlightPWM=%u",
+        "calWeight=%lu,calUnit=%s,weightMax=%.4f,backlightPWM=%u,"
+        "echo=%u,prompt=%u",
         (double) ee_calValue, (long) ee_zeroValue, (int) ee_backlight,
         unit_name ? unit_name : "?",
         (unsigned long) ee_calWeight, cal_unit_name ? cal_unit_name : "?",
-        (double) ee_weightMax, (unsigned) ee_backlightPWM);
+        (double) ee_weightMax, (unsigned) ee_backlightPWM,
+        (unsigned) ee_echo, (unsigned) ee_prompt);
     SCPI_ResultCharacters(context, buf, strlen(buf));
     return SCPI_RES_OK;
 }
@@ -477,6 +518,10 @@ static const scpi_command_t scpi_commands[] = {
     { .pattern = "SYSTem:POWer:VOLTage:BATTery?", .callback = Sys_VbattQ, },
     { .pattern = "SYSTem:POWer:VOLTage:SUPPly?",  .callback = Sys_VsuppQ, },
     { .pattern = "SYSTem:POWer:DOWN",              .callback = Sys_PowerDown, },
+    { .pattern = "SYSTem:ECHO",                   .callback = Sys_Echo, },
+    { .pattern = "SYSTem:ECHO?",                  .callback = Sys_EchoQ, },
+    { .pattern = "SYSTem:PROMpt",                 .callback = Sys_Prompt, },
+    { .pattern = "SYSTem:PROMpt?",                .callback = Sys_PromptQ, },
     { .pattern = "SYSTem:EEPROM?",                .callback = Sys_EepromQ, },
 
 #if FREERTOS_DIAG
@@ -528,6 +573,10 @@ void TaskSCPI(void *pvParameters) {
 
     DBG_PRINTF("SCPI parser initialized.\r\n");
 
+    if (scpiPromptEnable) {
+        Serial.print("> ");
+    }
+
     uint8_t buf[64];
     for (;;) {
         int avail = Serial.available();
@@ -535,6 +584,9 @@ void TaskSCPI(void *pvParameters) {
             int toRead = (avail > (int) sizeof(buf)) ? (int) sizeof(buf) : avail;
             int n = Serial.readBytes(buf, toRead);
             if (n > 0) {
+                if (scpiEchoEnable) {
+                    Serial.write(buf, n);
+                }
                 SCPI_Input(&scpi_context, (const char *) buf, n);
             }
         }

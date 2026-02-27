@@ -29,6 +29,8 @@ enum e_unitVal {kg = 0, lb = 1};
 #define EEPROM_ADDR_CAL_UNIT     (EEPROM_ADDR_CAL_WEIGHT + (int)sizeof(uint32_t))
 #define EEPROM_ADDR_WEIGHT_MAX   (EEPROM_ADDR_CAL_UNIT   + (int)sizeof(e_unitVal))
 #define EEPROM_ADDR_BACKLIGHT_PWM (EEPROM_ADDR_WEIGHT_MAX + (int)sizeof(float))
+#define EEPROM_ADDR_ECHO          (EEPROM_ADDR_BACKLIGHT_PWM + (int)sizeof(uint8_t))
+#define EEPROM_ADDR_PROMPT        (EEPROM_ADDR_ECHO          + (int)sizeof(uint8_t))
 
 // Debug logging — messages go to a RAM ring buffer readable via SYST:LOG?
 // Set SCPI_DEBUG to 0 to compile out all debug logging.

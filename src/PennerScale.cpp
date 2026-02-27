@@ -164,6 +164,8 @@ bool configSwitch2 = 0;
 
 e_backlightEnable backlightEnable = off;
 uint8_t backlightPWM = BACKLIGHT_PWM_DEFAULT;  // 0-100 percent
+bool scpiEchoEnable   = true;   // default ON
+bool scpiPromptEnable = true;   // default ON
 // setting PWM properties
 const uint32_t backlightPWMfreq = 5000;
 const uint8_t backlightPWMres = 8;
@@ -305,6 +307,14 @@ void setup() {
   uint8_t EEPROMbacklightPWM;
   EEPROM.get(EEPROM_ADDR_BACKLIGHT_PWM, EEPROMbacklightPWM);
   if (EEPROMbacklightPWM <= 100) backlightPWM = EEPROMbacklightPWM;
+
+  uint8_t EEPROMecho;
+  EEPROM.get(EEPROM_ADDR_ECHO, EEPROMecho);
+  if (EEPROMecho <= 1) scpiEchoEnable = (bool) EEPROMecho;
+
+  uint8_t EEPROMprompt;
+  EEPROM.get(EEPROM_ADDR_PROMPT, EEPROMprompt);
+  if (EEPROMprompt <= 1) scpiPromptEnable = (bool) EEPROMprompt;
 
   ledcWrite(LCD_BACKLIGHT, pwmPercentToDuty(backlightPWM) * (backlightEnable != off));
 
@@ -1224,6 +1234,15 @@ void powerDown(void)
   if(EEPROMunitVal != unitVal) EEPROM.put(EEPROM_ADDR_UNIT_VAL, unitVal);
   if(EEPROMbacklightEnable != backlightEnable) EEPROM.put(EEPROM_ADDR_BACKLIGHT, backlightEnable);
   if(EEPROMbacklightPWM != backlightPWM) EEPROM.put(EEPROM_ADDR_BACKLIGHT_PWM, backlightPWM);
+
+  uint8_t EEPROMecho;
+  EEPROM.get(EEPROM_ADDR_ECHO, EEPROMecho);
+  if (EEPROMecho != (uint8_t)scpiEchoEnable) EEPROM.put(EEPROM_ADDR_ECHO, (uint8_t)scpiEchoEnable);
+
+  uint8_t EEPROMprompt;
+  EEPROM.get(EEPROM_ADDR_PROMPT, EEPROMprompt);
+  if (EEPROMprompt != (uint8_t)scpiPromptEnable) EEPROM.put(EEPROM_ADDR_PROMPT, (uint8_t)scpiPromptEnable);
+
   DBG_PRINTF("EEPROMextADCweightMax: %f\n", EEPROMextADCweightMax);
   DBG_PRINTF("extADCweightMax: %f\n", extADCweightMax);
   if(abs(extADCweightMax) > abs(EEPROMextADCweightMax))
