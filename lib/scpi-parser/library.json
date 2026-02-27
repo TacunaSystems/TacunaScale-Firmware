@@ -1,0 +1,13 @@
+{
+    "name": "scpi-parser",
+    "version": "2.2.0",
+    "description": "PlatformIO wrapper for j123b567/scpi-parser (git submodule)",
+    "keywords": "scpi, parser, instrument",
+    "frameworks": "*",
+    "platforms": "*",
+    "build": {
+        "flags": [
+            "-Iextern/scpi-parser/libscpi/inc"
+        ]
+    }
+}
