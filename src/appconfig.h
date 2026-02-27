@@ -5,7 +5,7 @@
  * appconfig.h — shared definitions used by PennerScale.cpp and scpi_interface.cpp
  */
 
-#define FW_VER  "1.0.0"
+#define FW_VER  "1.1.0b"
 
 // FreeRTOS diagnostic SCPI commands (SYST:DIAG:STATS? / SYST:DIAG:LIST?)
 #ifndef FREERTOS_DIAG
