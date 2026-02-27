@@ -28,7 +28,6 @@ extern float   v5vVolts;
 extern e_backlightEnable backlightEnable;
 extern const float kgtolbScalar;
 extern const String unitAbbr[];
-extern const uint8_t backlightPWM;
 extern portMUX_TYPE measMux;
 
 /* ------------------------------------------------------------------ */
@@ -127,7 +126,9 @@ static scpi_result_t Meas_WeightMax(scpi_t *context) {
     if (!SCPI_ParamNumber(context, scpi_special_numbers_def, &val, TRUE)) {
         return SCPI_RES_ERR;
     }
+    taskENTER_CRITICAL(&measMux);
     extADCweightMax = (float) val.content.value;
+    taskEXIT_CRITICAL(&measMux);
     EEPROM.put(EEPROM_ADDR_WEIGHT_MAX, extADCweightMax);
     EEPROM.commit();
     return SCPI_RES_OK;
@@ -149,8 +150,9 @@ static scpi_result_t Conf_Unit(scpi_t *context) {
 
 /* CONFigure:UNIT? */
 static scpi_result_t Conf_UnitQ(scpi_t *context) {
-    const char *name;
+    const char *name = NULL;
     SCPI_ChoiceToName(unit_choices, (int32_t) unitVal, &name);
+    if (!name) name = "?";
     SCPI_ResultCharacters(context, name, strlen(name));
     return SCPI_RES_OK;
 }
@@ -230,10 +232,14 @@ static scpi_result_t Cal_WeightQ(scpi_t *context) {
     return SCPI_RES_OK;
 }
 
-/* CALibration:WEIGht <uint32> — set calibration weight and persist */
+/* CALibration:WEIGht <uint32> — set calibration weight and persist (must be > 0) */
 static scpi_result_t Cal_Weight(scpi_t *context) {
     int32_t val;
     if (!SCPI_ParamInt32(context, &val, TRUE)) {
+        return SCPI_RES_ERR;
+    }
+    if (val <= 0) {
+        SCPI_ErrorPush(context, SCPI_ERROR_ILLEGAL_PARAMETER_VALUE);
         return SCPI_RES_ERR;
     }
     calWeight = (uint32_t) val;
@@ -243,8 +249,9 @@ static scpi_result_t Cal_Weight(scpi_t *context) {
 }
 
 static scpi_result_t Cal_UnitQ(scpi_t *context) {
-    const char *name;
+    const char *name = NULL;
     SCPI_ChoiceToName(unit_choices, (int32_t) calUnit, &name);
+    if (!name) name = "?";
     SCPI_ResultCharacters(context, name, strlen(name));
     return SCPI_RES_OK;
 }
@@ -272,7 +279,7 @@ static scpi_result_t Sys_Backlight(scpi_t *context) {
         return SCPI_RES_ERR;
     }
     backlightEnable = val ? on : off;
-    ledcWrite(LCD_BACKLIGHT, backlightPWM * backlightEnable);
+    ledcWrite(LCD_BACKLIGHT, BACKLIGHT_PWM * backlightEnable);
     return SCPI_RES_OK;
 }
 

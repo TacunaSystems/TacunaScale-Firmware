@@ -12,8 +12,9 @@
 #define FREERTOS_DIAG 0
 #endif
 
-// LCD backlight pin (needed by SCPI backlight command)
-#define LCD_BACKLIGHT 14
+// LCD backlight
+#define LCD_BACKLIGHT     14
+#define BACKLIGHT_PWM     80
 
 // Unit enumerations
 enum e_backlightEnable {off = 0, on = 1, on_motion = 2};

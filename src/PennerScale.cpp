@@ -166,7 +166,6 @@ e_backlightEnable backlightEnable = off;
 // setting PWM properties
 const uint32_t backlightPWMfreq = 5000;
 const uint8_t backlightPWMres = 8;
-extern const uint8_t backlightPWM = 80;
 
 e_unitVal unitVal = DEFAULT_UNIT;
 
@@ -298,7 +297,7 @@ void setup() {
   }
   if (!isnan(EEPROMextADCweightMax)) extADCweightMax = EEPROMextADCweightMax;
 
-  ledcWrite(LCD_BACKLIGHT, backlightPWM * backlightEnable);
+  ledcWrite(LCD_BACKLIGHT, BACKLIGHT_PWM * backlightEnable);
 
   // Initialize shared SPI bus once (FSPI/SPI2 IOMUX pins — optimal for HW SPI)
   SPI.begin(SCLK, MISO, MOSI, -1);  // No automatic SS — CS managed per-device
@@ -557,7 +556,7 @@ void TaskUI(void *pvParameters)
       //else if(backlightEnable == on) backlightEnable = on_motion;
       //else if(backlightEnable == on_motion) backlightEnable = off;        
       DBG_PRINTF("Backlight toggle flag set. Backlight = %d\n", backlightEnable);
-      ledcWrite(LCD_BACKLIGHT, backlightPWM * backlightEnable);
+      ledcWrite(LCD_BACKLIGHT, BACKLIGHT_PWM * backlightEnable);
 
     }
     else if(bklButtonFlag == long_press_flag)
