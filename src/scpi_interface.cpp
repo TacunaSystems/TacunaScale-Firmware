@@ -26,6 +26,7 @@ extern e_unitVal unitVal;
 extern float   vinVolts;
 extern float   v5vVolts;
 extern e_backlightEnable backlightEnable;
+extern uint8_t backlightPWM;
 extern const float kgtolbScalar;
 extern const String unitAbbr[];
 extern portMUX_TYPE measMux;
@@ -79,6 +80,10 @@ static const scpi_choice_def_t unit_choices[] = {
     {"LB", (int32_t) lb},
     SCPI_CHOICE_LIST_END
 };
+
+static inline uint8_t pwmPercentToDuty(uint8_t pct) {
+    return (uint8_t)((uint16_t)pct * 255 / 100);
+}
 
 /* ------------------------------------------------------------------ */
 /*  Measurement commands                                              */
@@ -279,13 +284,38 @@ static scpi_result_t Sys_Backlight(scpi_t *context) {
         return SCPI_RES_ERR;
     }
     backlightEnable = val ? on : off;
-    ledcWrite(LCD_BACKLIGHT, BACKLIGHT_PWM * backlightEnable);
+    ledcWrite(LCD_BACKLIGHT, pwmPercentToDuty(backlightPWM) * (backlightEnable != off));
     return SCPI_RES_OK;
 }
 
 /* SYSTem:BACKlight? */
 static scpi_result_t Sys_BacklightQ(scpi_t *context) {
     SCPI_ResultBool(context, backlightEnable != off);
+    return SCPI_RES_OK;
+}
+
+/* SYSTem:BACKlight:PWM <0-100> — set backlight PWM duty cycle (percent) */
+static scpi_result_t Sys_BacklightPWM(scpi_t *context) {
+    int32_t val;
+    if (!SCPI_ParamInt32(context, &val, TRUE)) {
+        return SCPI_RES_ERR;
+    }
+    if (val < 0 || val > 100) {
+        SCPI_ErrorPush(context, SCPI_ERROR_ILLEGAL_PARAMETER_VALUE);
+        return SCPI_RES_ERR;
+    }
+    backlightPWM = (uint8_t) val;
+    if (backlightEnable != off) {
+        ledcWrite(LCD_BACKLIGHT, pwmPercentToDuty(backlightPWM));
+    }
+    EEPROM.put(EEPROM_ADDR_BACKLIGHT_PWM, backlightPWM);
+    EEPROM.commit();
+    return SCPI_RES_OK;
+}
+
+/* SYSTem:BACKlight:PWM? */
+static scpi_result_t Sys_BacklightPWMQ(scpi_t *context) {
+    SCPI_ResultInt32(context, (int32_t) backlightPWM);
     return SCPI_RES_OK;
 }
 
@@ -318,6 +348,7 @@ static scpi_result_t Sys_EepromQ(scpi_t *context) {
     uint32_t         ee_calWeight;  EEPROM.get(EEPROM_ADDR_CAL_WEIGHT, ee_calWeight);
     e_unitVal        ee_calUnit;    EEPROM.get(EEPROM_ADDR_CAL_UNIT,   ee_calUnit);
     float            ee_weightMax;  EEPROM.get(EEPROM_ADDR_WEIGHT_MAX, ee_weightMax);
+    uint8_t          ee_backlightPWM; EEPROM.get(EEPROM_ADDR_BACKLIGHT_PWM, ee_backlightPWM);
 
     const char *unit_name = NULL, *cal_unit_name = NULL;
     SCPI_ChoiceToName(unit_choices, (int32_t) ee_unit, &unit_name);
@@ -326,11 +357,11 @@ static scpi_result_t Sys_EepromQ(scpi_t *context) {
     char buf[256];
     snprintf(buf, sizeof(buf),
         "calValue=%.6f,zeroValue=%ld,backlight=%d,unit=%s,"
-        "calWeight=%lu,calUnit=%s,weightMax=%.4f",
+        "calWeight=%lu,calUnit=%s,weightMax=%.4f,backlightPWM=%u",
         (double) ee_calValue, (long) ee_zeroValue, (int) ee_backlight,
         unit_name ? unit_name : "?",
         (unsigned long) ee_calWeight, cal_unit_name ? cal_unit_name : "?",
-        (double) ee_weightMax);
+        (double) ee_weightMax, (unsigned) ee_backlightPWM);
     SCPI_ResultCharacters(context, buf, strlen(buf));
     return SCPI_RES_OK;
 }
@@ -441,6 +472,8 @@ static const scpi_command_t scpi_commands[] = {
     /* System */
     { .pattern = "SYSTem:BACKlight",              .callback = Sys_Backlight, },
     { .pattern = "SYSTem:BACKlight?",             .callback = Sys_BacklightQ, },
+    { .pattern = "SYSTem:BACKlight:PWM",          .callback = Sys_BacklightPWM, },
+    { .pattern = "SYSTem:BACKlight:PWM?",         .callback = Sys_BacklightPWMQ, },
     { .pattern = "SYSTem:POWer:VOLTage:BATTery?", .callback = Sys_VbattQ, },
     { .pattern = "SYSTem:POWer:VOLTage:SUPPly?",  .callback = Sys_VsuppQ, },
     { .pattern = "SYSTem:POWer:DOWN",              .callback = Sys_PowerDown, },
