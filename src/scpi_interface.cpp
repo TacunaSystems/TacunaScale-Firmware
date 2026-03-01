@@ -37,17 +37,21 @@ extern portMUX_TYPE measMux;
 /*  SCPI interface callbacks                                          */
 /* ------------------------------------------------------------------ */
 
+static bool scpiResponseStart = true;
+
 static size_t SCPI_Write(scpi_t *context, const char *data, size_t len) {
     (void) context;
+    if (scpiPromptEnable && scpiResponseStart) {
+        Serial.print("> ");
+        scpiResponseStart = false;
+    }
     return Serial.write(reinterpret_cast<const uint8_t *>(data), len);
 }
 
 static scpi_result_t SCPI_Flush(scpi_t *context) {
     (void) context;
     Serial.flush();
-    if (scpiPromptEnable) {
-        Serial.print("> ");
-    }
+    scpiResponseStart = true;
     return SCPI_RES_OK;
 }
 
@@ -597,9 +601,22 @@ void TaskSCPI(void *pvParameters) {
             int n = Serial.readBytes(buf, toRead);
             if (n > 0) {
                 if (scpiEchoEnable) {
-                    Serial.write(buf, n);
+                    for (int i = 0; i < n; i++) {
+                        if (buf[i] == '\r') {
+                            Serial.print("\r\n");
+                            if (i + 1 < n && buf[i + 1] == '\n') i++;
+                        } else if (buf[i] == '\n') {
+                            Serial.print("\r\n");
+                        } else {
+                            Serial.write(buf[i]);
+                        }
+                    }
                 }
                 SCPI_Input(&scpi_context, (const char *) buf, n);
+                if (scpiPromptEnable &&
+                    (memchr(buf, '\n', n) || memchr(buf, '\r', n))) {
+                    Serial.print("> ");
+                }
             }
         }
         vTaskDelay(10 / portTICK_PERIOD_MS);
