@@ -8,6 +8,8 @@
 #include "RunningAverage.h"
 #include "appconfig.h"
 #include "scpi_interface.h"
+#include <esp_wifi.h>
+#include <esp_bt.h>
 
 // Library defines
 // FreeRTOS
@@ -118,7 +120,7 @@ const float  PWR_5V_LVL_VDIV_SCLR = (1/0.5); // // Multiply ADC Volts by this sc
 // FreeRTOS constants
 //  240, 160, 80    <<< For all XTAL types
 //  40, 20, 10      <<< For 40MHz XTAL
-#define REDUCED_CPU_SPEED 80  // Current measured at 30mA @ 9v at 40MHz.  Any slower than 40MHz and the UI is really laggy.
+#define REDUCED_CPU_SPEED 40  // 40 MHz = XTAL freq, lowest without DFS. Any slower and UI is laggy.
 
 // U8g2 Contructor (Frame Buffer) — Hardware SPI for ~2ms frame transfer vs ~73ms software
 U8G2_ST7567_ENH_DG128064I_F_4W_HW_SPI u8g2(U8G2_R2, /* cs=*/ LCD_CS, /* dc=*/ LCD_A0, /* reset=*/ LCD_RST);
@@ -220,6 +222,10 @@ void setup() {
   float EEPROMextADCweightMax;
 
   setCpuFrequencyMhz(REDUCED_CPU_SPEED);
+
+  // Explicitly disable unused radios to save power
+  esp_wifi_stop();
+  esp_bt_controller_disable();
 
 #if SCPI_DEBUG
   dbg_log_init();
