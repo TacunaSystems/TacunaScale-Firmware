@@ -41,12 +41,29 @@ pio run --target upload
 8. Wait until the output shows 'Hash of data verified. Leaving...'
 9. Power cycle the board and the new firmware should be loaded.
 
+## SCPI Interface
+
+The scale exposes a SCPI-2 (Standard Commands for Programmable Instruments) interface
+over UART at 115200 baud, 8N1. This provides remote access to measurement, calibration,
+configuration, and system commands.
+
+By default, the interface enables **echo** (mirrors typed characters back) and a **prompt**
+(`> `) after each response for interactive terminal use. Both can be toggled via
+`SYSTem:ECHO` and `SYSTem:PROMpt` and persist to EEPROM.
+
+See [`docs/SCPI_Commands.md`](docs/SCPI_Commands.md) for the full command reference and EEPROM map.
+
 ## Project Structure
 
 ```
 ├── platformio.ini          # PlatformIO project configuration
 ├── src/                    # Application source code
-│   └── PennerScale.cpp     #   Main firmware (FreeRTOS tasks, UI, calibration)
+│   ├── PennerScale.cpp     #   Main firmware (FreeRTOS tasks, UI, calibration)
+│   ├── scpi_interface.cpp  #   SCPI command handlers and FreeRTOS task
+│   ├── scpi_interface.h    #   SCPI parser configuration and task declaration
+│   ├── appconfig.h         #   Shared definitions (EEPROM map, enums, debug macros)
+│   ├── debug_log.cpp       #   RAM ring-buffer debug logger
+│   └── debug_log.h         #   Debug log API
 ├── lib/                    # Local/modified libraries
 │   └── PRDC_AD7193/        #   AD7192 ADC driver (uses AD7193 library, see note below)
 ├── include/                # Project header files
@@ -54,6 +71,7 @@ pio run --target upload
 │   └── logo_tacuna.h       #   Tacuna Systems boot splash logo (XBM)
 ├── test/                   # Unit tests
 ├── docs/                   # Reference documents
+│   ├── SCPI_Commands.md    #   SCPI command reference and EEPROM map
 │   └── AD7192.xlsx         #   ADC filter word to settling time/Hz lookup table
 ├── tools/                  # Development utilities
 │   └── png_to_xbm.py      #   PNG-to-XBM logo converter (requires Pillow)

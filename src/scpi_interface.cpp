@@ -4,6 +4,7 @@
 
 #include <Arduino.h>
 #include <EEPROM.h>
+#include <cstring>
 #include "appconfig.h"
 #include "scpi_interface.h"
 #include "RunningAverage.h"
@@ -27,6 +28,8 @@ extern float   vinVolts;
 extern float   v5vVolts;
 extern e_backlightEnable backlightEnable;
 extern uint8_t backlightPWM;
+extern volatile bool scpiEchoEnable;
+extern volatile bool scpiPromptEnable;
 extern const float kgtolbScalar;
 extern const String unitAbbr[];
 extern portMUX_TYPE measMux;
@@ -35,14 +38,21 @@ extern portMUX_TYPE measMux;
 /*  SCPI interface callbacks                                          */
 /* ------------------------------------------------------------------ */
 
+static bool scpiResponseStart = true;
+
 static size_t SCPI_Write(scpi_t *context, const char *data, size_t len) {
     (void) context;
+    if (scpiPromptEnable && scpiResponseStart) {
+        Serial.print("> ");
+        scpiResponseStart = false;
+    }
     return Serial.write(reinterpret_cast<const uint8_t *>(data), len);
 }
 
 static scpi_result_t SCPI_Flush(scpi_t *context) {
     (void) context;
     Serial.flush();
+    scpiResponseStart = true;
     return SCPI_RES_OK;
 }
 
@@ -194,6 +204,7 @@ static scpi_result_t Conf_Zero(scpi_t *context) {
 /*  Calibration commands                                              */
 /* ------------------------------------------------------------------ */
 
+/* CALibration:VALue? — query calibration factor */
 static scpi_result_t Cal_ValueQ(scpi_t *context) {
     SCPI_ResultFloat(context, calValue);
     return SCPI_RES_OK;
@@ -215,6 +226,7 @@ static scpi_result_t Cal_Value(scpi_t *context) {
     return SCPI_RES_OK;
 }
 
+/* CALibration:ZERO? — query zero-reference ADC value */
 static scpi_result_t Cal_ZeroQ(scpi_t *context) {
     SCPI_ResultInt32(context, zeroValue);
     return SCPI_RES_OK;
@@ -232,6 +244,7 @@ static scpi_result_t Cal_Zero(scpi_t *context) {
     return SCPI_RES_OK;
 }
 
+/* CALibration:WEIGht? — query calibration weight */
 static scpi_result_t Cal_WeightQ(scpi_t *context) {
     SCPI_ResultUInt32(context, calWeight);
     return SCPI_RES_OK;
@@ -253,6 +266,7 @@ static scpi_result_t Cal_Weight(scpi_t *context) {
     return SCPI_RES_OK;
 }
 
+/* CALibration:UNIT? — query calibration unit */
 static scpi_result_t Cal_UnitQ(scpi_t *context) {
     const char *name = NULL;
     SCPI_ChoiceToName(unit_choices, (int32_t) calUnit, &name);
@@ -319,6 +333,38 @@ static scpi_result_t Sys_BacklightPWMQ(scpi_t *context) {
     return SCPI_RES_OK;
 }
 
+/* SYSTem:ECHO <ON|OFF> */
+static scpi_result_t Sys_Echo(scpi_t *context) {
+    scpi_bool_t val;
+    if (!SCPI_ParamBool(context, &val, TRUE)) return SCPI_RES_ERR;
+    scpiEchoEnable = (bool) val;
+    EEPROM.put(EEPROM_ADDR_ECHO, (uint8_t) scpiEchoEnable);
+    EEPROM.commit();
+    return SCPI_RES_OK;
+}
+
+/* SYSTem:ECHO? */
+static scpi_result_t Sys_EchoQ(scpi_t *context) {
+    SCPI_ResultBool(context, scpiEchoEnable);
+    return SCPI_RES_OK;
+}
+
+/* SYSTem:PROMpt <ON|OFF> */
+static scpi_result_t Sys_Prompt(scpi_t *context) {
+    scpi_bool_t val;
+    if (!SCPI_ParamBool(context, &val, TRUE)) return SCPI_RES_ERR;
+    scpiPromptEnable = (bool) val;
+    EEPROM.put(EEPROM_ADDR_PROMPT, (uint8_t) scpiPromptEnable);
+    EEPROM.commit();
+    return SCPI_RES_OK;
+}
+
+/* SYSTem:PROMpt? */
+static scpi_result_t Sys_PromptQ(scpi_t *context) {
+    SCPI_ResultBool(context, scpiPromptEnable);
+    return SCPI_RES_OK;
+}
+
 /* SYSTem:POWer:VOLTage:BATTery? */
 static scpi_result_t Sys_VbattQ(scpi_t *context) {
     SCPI_ResultFloat(context, vinVolts);
@@ -349,6 +395,8 @@ static scpi_result_t Sys_EepromQ(scpi_t *context) {
     e_unitVal        ee_calUnit;    EEPROM.get(EEPROM_ADDR_CAL_UNIT,   ee_calUnit);
     float            ee_weightMax;  EEPROM.get(EEPROM_ADDR_WEIGHT_MAX, ee_weightMax);
     uint8_t          ee_backlightPWM; EEPROM.get(EEPROM_ADDR_BACKLIGHT_PWM, ee_backlightPWM);
+    uint8_t          ee_echo;   EEPROM.get(EEPROM_ADDR_ECHO,   ee_echo);
+    uint8_t          ee_prompt; EEPROM.get(EEPROM_ADDR_PROMPT,  ee_prompt);
 
     const char *unit_name = NULL, *cal_unit_name = NULL;
     SCPI_ChoiceToName(unit_choices, (int32_t) ee_unit, &unit_name);
@@ -357,12 +405,23 @@ static scpi_result_t Sys_EepromQ(scpi_t *context) {
     char buf[256];
     snprintf(buf, sizeof(buf),
         "calValue=%.6f,zeroValue=%ld,backlight=%d,unit=%s,"
-        "calWeight=%lu,calUnit=%s,weightMax=%.4f,backlightPWM=%u",
+        "calWeight=%lu,calUnit=%s,weightMax=%.4f,backlightPWM=%u,"
+        "echo=%u,prompt=%u",
         (double) ee_calValue, (long) ee_zeroValue, (int) ee_backlight,
         unit_name ? unit_name : "?",
         (unsigned long) ee_calWeight, cal_unit_name ? cal_unit_name : "?",
-        (double) ee_weightMax, (unsigned) ee_backlightPWM);
+        (double) ee_weightMax, (unsigned) ee_backlightPWM,
+        (unsigned) ee_echo, (unsigned) ee_prompt);
     SCPI_ResultCharacters(context, buf, strlen(buf));
+    return SCPI_RES_OK;
+}
+
+/* SYSTem:EEPROM:COMMit — flush any pending EEPROM writes to flash */
+static scpi_result_t Sys_EepromCommit(scpi_t *context) {
+    if (!EEPROM.commit()) {
+        SCPI_ErrorPush(context, SCPI_ERROR_SYSTEM_ERROR);
+        return SCPI_RES_ERR;
+    }
     return SCPI_RES_OK;
 }
 
@@ -477,7 +536,12 @@ static const scpi_command_t scpi_commands[] = {
     { .pattern = "SYSTem:POWer:VOLTage:BATTery?", .callback = Sys_VbattQ, },
     { .pattern = "SYSTem:POWer:VOLTage:SUPPly?",  .callback = Sys_VsuppQ, },
     { .pattern = "SYSTem:POWer:DOWN",              .callback = Sys_PowerDown, },
-    { .pattern = "SYSTem:EEPROM?",                .callback = Sys_EepromQ, },
+    { .pattern = "SYSTem:ECHO",                    .callback = Sys_Echo, },
+    { .pattern = "SYSTem:ECHO?",                   .callback = Sys_EchoQ, },
+    { .pattern = "SYSTem:PROMpt",                  .callback = Sys_Prompt, },
+    { .pattern = "SYSTem:PROMpt?",                 .callback = Sys_PromptQ, },
+    { .pattern = "SYSTem:EEPROM?",                 .callback = Sys_EepromQ, },
+    { .pattern = "SYSTem:EEPROM:COMMit",           .callback = Sys_EepromCommit, },
 
 #if FREERTOS_DIAG
     /* Diagnostics */
@@ -528,6 +592,10 @@ void TaskSCPI(void *pvParameters) {
 
     DBG_PRINTF("SCPI parser initialized.\r\n");
 
+    if (scpiPromptEnable) {
+        Serial.print("> ");
+    }
+
     uint8_t buf[64];
     for (;;) {
         int avail = Serial.available();
@@ -535,7 +603,23 @@ void TaskSCPI(void *pvParameters) {
             int toRead = (avail > (int) sizeof(buf)) ? (int) sizeof(buf) : avail;
             int n = Serial.readBytes(buf, toRead);
             if (n > 0) {
+                if (scpiEchoEnable) {
+                    for (int i = 0; i < n; i++) {
+                        if (buf[i] == '\r') {
+                            Serial.print("\r\n");
+                            if (i + 1 < n && buf[i + 1] == '\n') i++;
+                        } else if (buf[i] == '\n') {
+                            Serial.print("\r\n");
+                        } else {
+                            Serial.write(buf[i]);
+                        }
+                    }
+                }
                 SCPI_Input(&scpi_context, (const char *) buf, n);
+                if (scpiPromptEnable &&
+                    (memchr(buf, '\n', n) || memchr(buf, '\r', n))) {
+                    Serial.print("> ");
+                }
             }
         }
         vTaskDelay(10 / portTICK_PERIOD_MS);

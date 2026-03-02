@@ -82,7 +82,12 @@ All set commands persist immediately to EEPROM.
 | `SYSTem:POWer:VOLTage:BATTery?` | Battery input voltage | — |
 | `SYSTem:POWer:VOLTage:SUPPly?` | 5V rail voltage | — |
 | `SYSTem:POWer:DOWN` | Trigger power-down sequence | — |
+| `SYSTem:ECHO <ON\|OFF>` | Enable/disable command echo (persists to EEPROM) | Boolean |
+| `SYSTem:ECHO?` | Query echo state | — |
+| `SYSTem:PROMpt <ON\|OFF>` | Enable/disable prompt after responses (persists to EEPROM) | Boolean |
+| `SYSTem:PROMpt?` | Query prompt state | — |
 | `SYSTem:EEPROM?` | Dump all EEPROM values (comma-separated key=value pairs) | — |
+| `SYSTem:EEPROM:COMMit` | Flush pending EEPROM writes to flash | — |
 
 ## Diagnostic Commands
 
@@ -117,6 +122,8 @@ reads all fields directly from flash.
 | 20 | calUnit | enum (int) | `CAL:UNIT`, calibration routine |
 | 24 | extADCweightMax | float | `MEAS:WEIG:MAX`, power-down |
 | 28 | backlightPWM | uint8_t | `SYST:BACK:PWM`, power-down |
+| 29 | echo | uint8_t | `SYST:ECHO`, power-down |
+| 30 | prompt | uint8_t | `SYST:PROM`, power-down |
 
 ## Examples
 
@@ -137,7 +144,7 @@ CONF:UNIT LB
 
 # Read all EEPROM values
 SYST:EEPROM?
-→ calValue=7168.220215,zeroValue=8295856,backlight=1,unit=KG,calWeight=100,calUnit=KG,weightMax=25.4321,backlightPWM=31
+→ calValue=7168.220215,zeroValue=8295856,backlight=1,unit=KG,calWeight=100,calUnit=KG,weightMax=25.4321,backlightPWM=31,echo=1,prompt=1
 
 # Reset peak weight
 MEAS:WEIG:MAX 0
