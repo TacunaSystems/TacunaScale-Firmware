@@ -4,6 +4,7 @@
 
 #include <Arduino.h>
 #include <EEPROM.h>
+#include <cstring>
 #include "appconfig.h"
 #include "scpi_interface.h"
 #include "RunningAverage.h"
@@ -27,8 +28,8 @@ extern float   vinVolts;
 extern float   v5vVolts;
 extern e_backlightEnable backlightEnable;
 extern uint8_t backlightPWM;
-extern bool scpiEchoEnable;
-extern bool scpiPromptEnable;
+extern volatile bool scpiEchoEnable;
+extern volatile bool scpiPromptEnable;
 extern const float kgtolbScalar;
 extern const String unitAbbr[];
 extern portMUX_TYPE measMux;
@@ -533,12 +534,12 @@ static const scpi_command_t scpi_commands[] = {
     { .pattern = "SYSTem:POWer:VOLTage:BATTery?", .callback = Sys_VbattQ, },
     { .pattern = "SYSTem:POWer:VOLTage:SUPPly?",  .callback = Sys_VsuppQ, },
     { .pattern = "SYSTem:POWer:DOWN",              .callback = Sys_PowerDown, },
-    { .pattern = "SYSTem:ECHO",                   .callback = Sys_Echo, },
-    { .pattern = "SYSTem:ECHO?",                  .callback = Sys_EchoQ, },
-    { .pattern = "SYSTem:PROMpt",                 .callback = Sys_Prompt, },
-    { .pattern = "SYSTem:PROMpt?",                .callback = Sys_PromptQ, },
-    { .pattern = "SYSTem:EEPROM?",                .callback = Sys_EepromQ, },
-    { .pattern = "SYSTem:EEPROM:COMMit",         .callback = Sys_EepromCommit, },
+    { .pattern = "SYSTem:ECHO",                    .callback = Sys_Echo, },
+    { .pattern = "SYSTem:ECHO?",                   .callback = Sys_EchoQ, },
+    { .pattern = "SYSTem:PROMpt",                  .callback = Sys_Prompt, },
+    { .pattern = "SYSTem:PROMpt?",                 .callback = Sys_PromptQ, },
+    { .pattern = "SYSTem:EEPROM?",                 .callback = Sys_EepromQ, },
+    { .pattern = "SYSTem:EEPROM:COMMit",           .callback = Sys_EepromCommit, },
 
 #if FREERTOS_DIAG
     /* Diagnostics */

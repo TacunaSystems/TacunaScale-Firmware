@@ -164,8 +164,8 @@ bool configSwitch2 = 0;
 
 e_backlightEnable backlightEnable = off;
 uint8_t backlightPWM = BACKLIGHT_PWM_DEFAULT;  // 0-100 percent
-bool scpiEchoEnable   = true;   // default ON
-bool scpiPromptEnable = true;   // default ON
+volatile bool scpiEchoEnable   = true;   // default ON
+volatile bool scpiPromptEnable = true;   // default ON
 // setting PWM properties
 const uint32_t backlightPWMfreq = 5000;
 const uint8_t backlightPWMres = 8;
