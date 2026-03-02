@@ -276,7 +276,7 @@ void setup() {
   configSwitch1 = digitalRead(SW_1);
   configSwitch2 = digitalRead(SW_2);
 
-  EEPROM.begin(512);
+  EEPROM.begin(EEPROM_SIZE_BYTES);
   EEPROM.get(EEPROM_ADDR_CAL_VALUE, EEPROMcalValue);
   EEPROM.get(EEPROM_ADDR_ZERO_VALUE, EEPROMZeroValue);
   EEPROM.get(EEPROM_ADDR_BACKLIGHT, EEPROMbacklightEnable);

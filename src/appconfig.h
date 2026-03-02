@@ -32,6 +32,7 @@ enum e_unitVal {kg = 0, lb = 1};
 #define EEPROM_ADDR_ECHO          (EEPROM_ADDR_BACKLIGHT_PWM + (int)sizeof(uint8_t))
 #define EEPROM_ADDR_PROMPT        (EEPROM_ADDR_ECHO          + (int)sizeof(uint8_t))
 #define EEPROM_ADDR_END           (EEPROM_ADDR_PROMPT        + (int)sizeof(uint8_t))
+#define EEPROM_SIZE_BYTES         EEPROM_ADDR_END
 
 // Debug logging — messages go to a RAM ring buffer readable via SYST:LOG?
 // Set SCPI_DEBUG to 0 to compile out all debug logging.

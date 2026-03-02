@@ -418,8 +418,10 @@ static scpi_result_t Sys_EepromQ(scpi_t *context) {
 
 /* SYSTem:EEPROM:COMMit — flush any pending EEPROM writes to flash */
 static scpi_result_t Sys_EepromCommit(scpi_t *context) {
-    (void) context;
-    EEPROM.commit();
+    if (!EEPROM.commit()) {
+        SCPI_ErrorPush(context, SCPI_ERROR_SYSTEM_ERROR);
+        return SCPI_RES_ERR;
+    }
     return SCPI_RES_OK;
 }
 
