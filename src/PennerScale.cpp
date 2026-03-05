@@ -60,9 +60,11 @@
 #define MISO 13
 #define MOSI 11
 #define EXT_ADC_CS 10
-#define NO_ACTIVITY_THRESHOLD_MS 300000  // 5min
-#define NO_ACTIVITY_WEIGHT_RANGE_LB 1
-#define NO_ACTIVITY_ADC_COUNTS 500  // Raw ADC count change threshold for activity detection (works even uncalibrated)
+#define NO_ACTIVITY_THRESHOLD_MS 300000  // 5min power-down timeout
+#define NO_ACTIVITY_WEIGHT_RANGE_LB 1   // Power-down deadzone (lb)
+#define NO_ACTIVITY_ADC_COUNTS 500      // Power-down deadzone (raw ADC counts, uncalibrated)
+#define IDLE_ACTIVITY_PCT 0.1f          // Idle wake threshold: % of full scale (calWeight or ADC range)
+#define ADC_FULL_SCALE 16777216         // AD7193 24-bit full scale (2^24)
 #define EXT_ADC_RATE 150  // 150 = 4Hz (based on settling time), 120 = 5Hz, 100=6Hz, 85=7Hz.  
 #define EXT_ANALOG_SETTLING_TIME (EXT_ADC_RATE * 1.6676f)
 #define EXT_ANALOG_READ_TASK_DELAY (EXT_ANALOG_SETTLING_TIME + 2)  // Call the read task a little late to catch the ADC just after conversion
@@ -120,7 +122,7 @@ const float  PWR_5V_LVL_VDIV_SCLR = (1/0.5); // // Multiply ADC Volts by this sc
 
 // FreeRTOS constants
 //  Valid CPU speeds: 240, 160, 80 (all XTAL types), 40, 20, 10 (40MHz XTAL only)
-#define CPU_SPEED 40  // 40 MHz (XTAL). APB=40MHz, max SPI=20MHz.
+#define CPU_SPEED 80  // 80 MHz. APB=80MHz, max SPI=40MHz.
 #define IDLE_MODE_THRESHOLD_MS 10000  // Seconds of stable weight before entering idle mode
 
 // U8g2 Contructor (Frame Buffer) — Hardware SPI for ~2ms frame transfer vs ~73ms software
@@ -190,7 +192,8 @@ const String unitAbbr[] = {"kg", "lb"};
 bool updateLCDWeight = true;
 volatile bool newWeightReady = false;
 bool noActivityPowerDownFlag = false;
-volatile uint32_t cpuIdleMode = 0;  // 1 when CPU is in low-power idle, 32-bit for atomic ops
+volatile uint32_t cpuIdleMode = 0;      // 1 when in idle mode, 32-bit for atomic ops
+volatile uint32_t msAtLastIdleActivity; // Idle timer — reset by any stimulus (ADC, button, SCPI)
 
 /* EEPROM addresses are defined as macros in appconfig.h */
 
@@ -212,8 +215,9 @@ TaskHandle_t xHandleTaskBKLButton = NULL;
 TaskHandle_t xHandleTaskUI = NULL;
 TaskHandle_t xHandleTaskSCPI = NULL;
 
-// Wake from idle mode (called on button press or ADC activity)
+// Wake from idle mode (called on button press, ADC activity, or SCPI input)
 void wakeFromIdleMode() {
+    msAtLastIdleActivity = millis();
     if (cpuIdleMode) {
         cpuIdleMode = 0;
         DBG_PRINTLN("Activity detected - exiting idle mode");
@@ -672,10 +676,11 @@ void TaskExtAnalogRead(void *pvParameters)
 {
   ( void ) pvParameters;
   TickType_t xLastWakeTime = xTaskGetTickCount ();
-  static uint32_t msAtLastWeightChange = millis();
+  static uint32_t msAtLastWeightChange = millis();  // Power-down timer (reset on >1 lb change)
   static float lastExtADCweight = 0;
   static float weightChangeLB = 0;
   static int32_t lastExtADCResultRaw = 0;
+  msAtLastIdleActivity = millis();  // Initialize idle timer
 
   xTaskDelayUntil(&xLastWakeTime, EXT_ANALOG_READ_TASK_DELAY/portTICK_PERIOD_MS);
 
@@ -718,21 +723,21 @@ void TaskExtAnalogRead(void *pvParameters)
     // Signal UI task that new weight data is available
     newWeightReady = true;
 
-    // Check for activity (weight change exceeding deadzone)
+    // Compute weight and ADC changes
     int32_t adcChange = abs(extADCResult - lastExtADCResultRaw);
     lastExtADCResultRaw = extADCResult;
     weightChangeLB = abs(lastExtADCweight - extADCweight);
     if(unitVal == kg) weightChangeLB = (weightChangeLB * kgtolbScalar);
-    // Use calibrated weight deadzone when available, raw ADC fallback when uncalibrated
-    bool activityDetected = (calValue != 0.0f)
+
+    // --- Power-down activity detection (original thresholds) ---
+    bool powerDownActivity = (calValue != 0.0f)
       ? (weightChangeLB > NO_ACTIVITY_WEIGHT_RANGE_LB)
       : (adcChange > NO_ACTIVITY_ADC_COUNTS);
-    if(activityDetected) {
+    if(powerDownActivity) {
       msAtLastWeightChange = millis();
-      wakeFromIdleMode();
     }
-    uint32_t msIdle = millis() - msAtLastWeightChange;
-    if((msIdle > NO_ACTIVITY_THRESHOLD_MS) && (vinVolts > 5.1))  // If we are on battery (Vin>5.1V), power down.  Otherwise, assume we are USB powered and ignore idle timeout.
+    uint32_t msSinceActivity = millis() - msAtLastWeightChange;
+    if((msSinceActivity > NO_ACTIVITY_THRESHOLD_MS) && (vinVolts > 5.1))
     {
       noActivityPowerDownFlag = true;
       DBG_PRINTLN("No activity - power down.");
@@ -742,8 +747,21 @@ void TaskExtAnalogRead(void *pvParameters)
     {
       noActivityPowerDownFlag = false;
     }
-    // Enter idle mode after IDLE_MODE_THRESHOLD_MS of stable weight
-    if (!cpuIdleMode && (msIdle > IDLE_MODE_THRESHOLD_MS))
+
+    // --- Idle mode activity detection (sensitive threshold: % of full scale) ---
+    float idleThresholdLB = (calUnit == kg)
+      ? (calWeight * kgtolbScalar * IDLE_ACTIVITY_PCT / 100.0f)
+      : (calWeight * IDLE_ACTIVITY_PCT / 100.0f);
+    int32_t idleThresholdADC = (int32_t)((float)ADC_FULL_SCALE * IDLE_ACTIVITY_PCT / 100.0f);
+    bool idleActivity = (calValue != 0.0f)
+      ? (weightChangeLB > idleThresholdLB)
+      : (adcChange > idleThresholdADC);
+    if(idleActivity) {
+      wakeFromIdleMode();
+    }
+    // Enter idle mode after IDLE_MODE_THRESHOLD_MS of no stimulus
+    uint32_t msIdleAge = millis() - msAtLastIdleActivity;
+    if (!cpuIdleMode && (msIdleAge > IDLE_MODE_THRESHOLD_MS))
     {
       cpuIdleMode = 1;
       DBG_PRINTLN("Entering idle mode");
