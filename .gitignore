@@ -4,3 +4,7 @@
 .vscode/ipch
 .claude/
 .entire/
+.dummy/
+managed_components/
+sdkconfig.*
+src/CMakeLists.txt
