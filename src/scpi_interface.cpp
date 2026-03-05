@@ -598,8 +598,10 @@ void TaskSCPI(void *pvParameters) {
 
     uint8_t buf[64];
     for (;;) {
-        int avail = Serial.available();
-        if (avail > 0) {
+        // Drain all available bytes before sleeping to avoid FIFO overflow
+        // (at 115200 baud, ~576 bytes can arrive during a 50ms sleep)
+        while (Serial.available() > 0) {
+            int avail = Serial.available();
             int toRead = (avail > (int) sizeof(buf)) ? (int) sizeof(buf) : avail;
             int n = Serial.readBytes(buf, toRead);
             if (n > 0) {
