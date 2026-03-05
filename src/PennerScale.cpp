@@ -62,6 +62,7 @@
 #define EXT_ADC_CS 10
 #define NO_ACTIVITY_THRESHOLD_MS 300000  // 5min
 #define NO_ACTIVITY_WEIGHT_RANGE_LB 1
+#define NO_ACTIVITY_ADC_COUNTS 500  // Raw ADC count change threshold for activity detection (works even uncalibrated)
 #define EXT_ADC_RATE 150  // 150 = 4Hz (based on settling time), 120 = 5Hz, 100=6Hz, 85=7Hz.  
 #define EXT_ANALOG_SETTLING_TIME (EXT_ADC_RATE * 1.6676f)
 #define EXT_ANALOG_READ_TASK_DELAY (EXT_ANALOG_SETTLING_TIME + 2)  // Call the read task a little late to catch the ADC just after conversion
@@ -120,7 +121,9 @@ const float  PWR_5V_LVL_VDIV_SCLR = (1/0.5); // // Multiply ADC Volts by this sc
 // FreeRTOS constants
 //  240, 160, 80    <<< For all XTAL types
 //  40, 20, 10      <<< For 40MHz XTAL
-#define REDUCED_CPU_SPEED 40  // 40 MHz = XTAL freq, lowest without DFS. Any slower and UI is laggy.
+#define CPU_SPEED_ACTIVE 40  // 40 MHz (XTAL). APB=40MHz, max SPI=20MHz.
+#define CPU_SPEED_IDLE   40  // No idle scaling — marginal savings not worth complexity.
+#define IDLE_MODE_THRESHOLD_MS 10000  // 10 seconds of stable weight before entering idle mode
 
 // U8g2 Contructor (Frame Buffer) — Hardware SPI for ~2ms frame transfer vs ~73ms software
 U8G2_ST7567_ENH_DG128064I_F_4W_HW_SPI u8g2(U8G2_R2, /* cs=*/ LCD_CS, /* dc=*/ LCD_A0, /* reset=*/ LCD_RST);
@@ -189,6 +192,7 @@ const String unitAbbr[] = {"kg", "lb"};
 bool updateLCDWeight = true;
 volatile bool newWeightReady = false;
 bool noActivityPowerDownFlag = false;
+volatile uint32_t cpuIdleMode = 0;  // 1 when CPU is in low-power idle, 32-bit for atomic ops
 
 /* EEPROM addresses are defined as macros in appconfig.h */
 
@@ -210,6 +214,15 @@ TaskHandle_t xHandleTaskBKLButton = NULL;
 TaskHandle_t xHandleTaskUI = NULL;
 TaskHandle_t xHandleTaskSCPI = NULL;
 
+// Wake CPU from idle mode (called on button press)
+void wakeFromIdleMode() {
+    if (cpuIdleMode) {
+        cpuIdleMode = 0;
+        setCpuFrequencyMhz(CPU_SPEED_ACTIVE);
+        DBG_PRINTF("Wake from idle - CPU %d MHz\n", CPU_SPEED_ACTIVE);
+    }
+}
+
 // The setup function runs once when you press reset or power on the board.
 void setup() {
   // Load cell init
@@ -221,11 +234,13 @@ void setup() {
   e_unitVal EEPROMcalUnit;
   float EEPROMextADCweightMax;
 
-  setCpuFrequencyMhz(REDUCED_CPU_SPEED);
+  setCpuFrequencyMhz(CPU_SPEED_ACTIVE);
 
-  // Explicitly disable unused radios to save power
+  // Fully deinit unused radios to save power and free memory
   esp_wifi_stop();
+  esp_wifi_deinit();
   esp_bt_controller_disable();
+  esp_bt_controller_deinit();
 
 #if SCPI_DEBUG
   dbg_log_init();
@@ -626,8 +641,9 @@ void TaskExtAnalogRead(void *pvParameters)
   ( void ) pvParameters;
   TickType_t xLastWakeTime = xTaskGetTickCount ();
   static uint32_t msAtLastWeightChange = millis();
-  static float lastExtADCweight = 0; 
-  static float weightChangeLB = 0; 
+  static float lastExtADCweight = 0;
+  static float weightChangeLB = 0;
+  static int32_t lastExtADCResultRaw = 0;
 
   xTaskDelayUntil(&xLastWakeTime, EXT_ANALOG_READ_TASK_DELAY/portTICK_PERIOD_MS);
 
@@ -649,7 +665,7 @@ void TaskExtAnalogRead(void *pvParameters)
     extADCResultCh1 = AD7193.singleConversion();
     AD7193.channelSelect(AD7193_CH_0);
     xSemaphoreGive(SPImutex);
-      
+
     // If DIP switch 1 is off (logic high), then scale is configured for single channel.  Otherwise use both channels.
     if(configSwitch1) extADCResult = extADCResultCh0; else extADCResult = extADCResultCh0 + extADCResultCh1;
     extADCweight = (calValue != 0.0f) ? (extADCResult - zeroValue)/calValue - tareValue : 0.0f;
@@ -670,19 +686,36 @@ void TaskExtAnalogRead(void *pvParameters)
     // Signal UI task that new weight data is available
     newWeightReady = true;
 
-    // Check for activity - if no activity timout reached, power down
+    // Check for activity (weight change exceeding deadzone)
+    int32_t adcChange = abs(extADCResult - lastExtADCResultRaw);
+    lastExtADCResultRaw = extADCResult;
     weightChangeLB = abs(lastExtADCweight - extADCweight);
     if(unitVal == kg) weightChangeLB = (weightChangeLB * kgtolbScalar);
-    if(weightChangeLB > NO_ACTIVITY_WEIGHT_RANGE_LB) msAtLastWeightChange = millis();
-    if((millis() - msAtLastWeightChange > NO_ACTIVITY_THRESHOLD_MS) && (vinVolts > 5.1))  // If we are on battery (Vin>5.1V), power down.  Otherwise, assume we are USB powered and ignore idle timeout.
+    // Use calibrated weight deadzone when available, raw ADC fallback when uncalibrated
+    bool activityDetected = (calValue != 0.0f)
+      ? (weightChangeLB > NO_ACTIVITY_WEIGHT_RANGE_LB)
+      : (adcChange > NO_ACTIVITY_ADC_COUNTS);
+    if(activityDetected) {
+      msAtLastWeightChange = millis();
+      wakeFromIdleMode();
+    }
+    uint32_t msIdle = millis() - msAtLastWeightChange;
+    if((msIdle > NO_ACTIVITY_THRESHOLD_MS) && (vinVolts > 5.1))  // If we are on battery (Vin>5.1V), power down.  Otherwise, assume we are USB powered and ignore idle timeout.
     {
       noActivityPowerDownFlag = true;
       DBG_PRINTLN("No activity - power down.");
       powerDown();
     }
-    else 
+    else
     {
       noActivityPowerDownFlag = false;
+    }
+    // Adaptive CPU speed: drop to idle speed after IDLE_MODE_THRESHOLD_MS of stable weight
+    if (!cpuIdleMode && (msIdle > IDLE_MODE_THRESHOLD_MS))
+    {
+      cpuIdleMode = 1;
+      setCpuFrequencyMhz(CPU_SPEED_IDLE);
+      DBG_PRINTF("Idle mode - CPU %d MHz\n", CPU_SPEED_IDLE);
     }
     xTaskDelayUntil(&xLastWakeTime, EXT_ANALOG_READ_TASK_DELAY/portTICK_PERIOD_MS);
   }
@@ -762,6 +795,7 @@ void TaskPowerZeroButton(void *pvParameters)
       {
         // Fresh button press event detected
         powerButtonStat = is_pressed;
+        wakeFromIdleMode();
       }
     }
     else
@@ -819,6 +853,7 @@ void TaskUnitButton(void *pvParameters)
       {
         // Fresh button press event detected
         unitButtonStat = is_pressed;
+        wakeFromIdleMode();
       }
     }
     else
@@ -875,6 +910,7 @@ void TaskBKLButton(void *pvParameters)
       {
         // Fresh button press event detected
         bklButtonStat = is_pressed;
+        wakeFromIdleMode();
       }
     }
     else

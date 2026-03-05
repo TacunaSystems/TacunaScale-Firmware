@@ -569,10 +569,7 @@ void PRDC_AD7193::setBPDSW(bool BPDSW_state) {
   uint8_t regValue = this->getSingleRegister(AD7193_REG_GPOCON, 1);
   if(BPDSW_state == false) regValue &= ~AD7193_GPOCON_BPDSW;
   else regValue |= AD7193_GPOCON_BPDSW;
-  this->beginTransaction();
-  this->setRegister(AD7193_REG_GPOCON, regValue, 1);
-  this->waitReady();
-  this->endTransaction();
+  this->setSingleRegister(AD7193_REG_GPOCON, regValue, 1);
 }
 
 // printAllRegisters() function
