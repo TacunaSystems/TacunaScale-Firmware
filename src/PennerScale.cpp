@@ -750,9 +750,12 @@ void TaskExtAnalogRead(void *pvParameters)
     }
 
     // --- Idle mode activity detection (sensitive threshold: % of full scale) ---
+    // Derive full-scale capacity from ADC range and calibration factor
+    // (calWeight is just the reference weight, not the scale's capacity)
+    float fullScaleWeight = (float)ADC_FULL_SCALE / calValue;  // in calUnit
     float idleThresholdLB = (calUnit == kg)
-      ? (calWeight * kgtolbScalar * IDLE_ACTIVITY_PCT / 100.0f)
-      : (calWeight * IDLE_ACTIVITY_PCT / 100.0f);
+      ? (fullScaleWeight * kgtolbScalar * IDLE_ACTIVITY_PCT / 100.0f)
+      : (fullScaleWeight * IDLE_ACTIVITY_PCT / 100.0f);
     int32_t idleThresholdADC = (int32_t)((float)ADC_FULL_SCALE * IDLE_ACTIVITY_PCT / 100.0f);
     bool idleActivity = (calValue != 0.0f)
       ? (weightChangeLB > idleThresholdLB)
