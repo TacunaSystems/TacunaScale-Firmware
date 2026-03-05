@@ -8,6 +8,8 @@
 #include "RunningAverage.h"
 #include "appconfig.h"
 #include "scpi_interface.h"
+#include <esp_wifi.h>
+#include <esp_bt.h>
 
 // Library defines
 // FreeRTOS
@@ -58,8 +60,11 @@
 #define MISO 13
 #define MOSI 11
 #define EXT_ADC_CS 10
-#define NO_ACTIVITY_THRESHOLD_MS 300000  // 5min
-#define NO_ACTIVITY_WEIGHT_RANGE_LB 1
+#define NO_ACTIVITY_THRESHOLD_MS 300000  // 5min power-down timeout
+#define NO_ACTIVITY_WEIGHT_RANGE_LB 1   // Power-down deadzone (lb)
+#define NO_ACTIVITY_ADC_COUNTS 500      // Power-down deadzone (raw ADC counts, uncalibrated)
+#define IDLE_ACTIVITY_PCT 0.1f          // Idle wake threshold: % of full scale (calWeight or ADC range)
+#define ADC_FULL_SCALE 16777216         // AD7193 24-bit full scale (2^24)
 #define EXT_ADC_RATE 150  // 150 = 4Hz (based on settling time), 120 = 5Hz, 100=6Hz, 85=7Hz.  
 #define EXT_ANALOG_SETTLING_TIME (EXT_ADC_RATE * 1.6676f)
 #define EXT_ANALOG_READ_TASK_DELAY (EXT_ANALOG_SETTLING_TIME + 2)  // Call the read task a little late to catch the ADC just after conversion
@@ -116,9 +121,9 @@ const float  PWR_5V_LVL_VDIV_SCLR = (1/0.5); // // Multiply ADC Volts by this sc
 #define BAT_IND_X_POS (u8g2.getDisplayWidth() - BAT_IND_WIDTH)
 
 // FreeRTOS constants
-//  240, 160, 80    <<< For all XTAL types
-//  40, 20, 10      <<< For 40MHz XTAL
-#define REDUCED_CPU_SPEED 80  // Current measured at 30mA @ 9v at 40MHz.  Any slower than 40MHz and the UI is really laggy.
+//  Valid CPU speeds: 240, 160, 80 (all XTAL types), 40, 20, 10 (40MHz XTAL only)
+#define CPU_SPEED 80  // 80 MHz. APB=80MHz, max SPI=40MHz.
+#define IDLE_MODE_THRESHOLD_MS 10000  // Seconds of stable weight before entering idle mode
 
 // U8g2 Contructor (Frame Buffer) — Hardware SPI for ~2ms frame transfer vs ~73ms software
 U8G2_ST7567_ENH_DG128064I_F_4W_HW_SPI u8g2(U8G2_R2, /* cs=*/ LCD_CS, /* dc=*/ LCD_A0, /* reset=*/ LCD_RST);
@@ -187,6 +192,8 @@ const String unitAbbr[] = {"kg", "lb"};
 bool updateLCDWeight = true;
 volatile bool newWeightReady = false;
 bool noActivityPowerDownFlag = false;
+volatile uint32_t cpuIdleMode = 0;      // 1 when in idle mode, 32-bit for atomic ops
+volatile uint32_t msAtLastIdleActivity; // Idle timer — reset by any stimulus (ADC, button, SCPI)
 
 /* EEPROM addresses are defined as macros in appconfig.h */
 
@@ -208,6 +215,15 @@ TaskHandle_t xHandleTaskBKLButton = NULL;
 TaskHandle_t xHandleTaskUI = NULL;
 TaskHandle_t xHandleTaskSCPI = NULL;
 
+// Wake from idle mode (called on button press, ADC activity, or SCPI input)
+void wakeFromIdleMode() {
+    msAtLastIdleActivity = millis();
+    if (cpuIdleMode) {
+        cpuIdleMode = 0;
+        DBG_PRINTLN("Activity detected - exiting idle mode");
+    }
+}
+
 // The setup function runs once when you press reset or power on the board.
 void setup() {
   // Load cell init
@@ -219,7 +235,14 @@ void setup() {
   e_unitVal EEPROMcalUnit;
   float EEPROMextADCweightMax;
 
-  setCpuFrequencyMhz(REDUCED_CPU_SPEED);
+  setCpuFrequencyMhz(CPU_SPEED);
+
+  // Fully deinit unused radios to save power and free memory
+  esp_err_t err;
+  err = esp_wifi_stop();        if (err != ESP_OK) DBG_PRINTF("wifi stop: %s\n", esp_err_to_name(err));
+  err = esp_wifi_deinit();      if (err != ESP_OK) DBG_PRINTF("wifi deinit: %s\n", esp_err_to_name(err));
+  err = esp_bt_controller_disable(); if (err != ESP_OK) DBG_PRINTF("bt disable: %s\n", esp_err_to_name(err));
+  err = esp_bt_controller_deinit();  if (err != ESP_OK) DBG_PRINTF("bt deinit: %s\n", esp_err_to_name(err));
 
 #if SCPI_DEBUG
   dbg_log_init();
@@ -285,36 +308,71 @@ void setup() {
   EEPROM.get(EEPROM_ADDR_CAL_UNIT, EEPROMcalUnit);
   EEPROM.get(EEPROM_ADDR_WEIGHT_MAX, EEPROMextADCweightMax);
 
+  // Validate EEPROM values; use compile-time defaults for any uninitialized fields.
+  // Track whether any field needed fixing so we can write defaults back.
+  bool eepromDirty = false;
+
   // If calValue is a real number, that means we've calibrated the unit and calValue and zeroValue are legitimate values
   if ((!isnan(EEPROMcalValue)) && (EEPROMcalValue>0))
   {
     calValue = EEPROMcalValue;
     zeroValue = EEPROMZeroValue;
-  } 
-  if (EEPROMbacklightEnable >= 0 && EEPROMbacklightEnable <= 2) backlightEnable = EEPROMbacklightEnable;
-  if (EEPROMunitVal >= 0 && EEPROMunitVal <= 1) unitVal = EEPROMunitVal;  
-  if (EEPROMcalWeight != 4294967295) calWeight = EEPROMcalWeight;  
+  } else { eepromDirty = true; }
+  if (EEPROMbacklightEnable >= 0 && EEPROMbacklightEnable <= 2) {
+    backlightEnable = EEPROMbacklightEnable;
+  } else { eepromDirty = true; }
+  if (EEPROMunitVal >= 0 && EEPROMunitVal <= 1) {
+    unitVal = EEPROMunitVal;
+  } else { eepromDirty = true; }
+  if (EEPROMcalWeight != 4294967295) {
+    calWeight = EEPROMcalWeight;
+  } else { eepromDirty = true; }
   if (EEPROMcalUnit >= 0 && EEPROMcalUnit <= 1)
   {
-    calUnit = EEPROMcalUnit; 
+    calUnit = EEPROMcalUnit;
   }
   else
   {
     calUnit = unitVal;
+    eepromDirty = true;
   }
-  if (!isnan(EEPROMextADCweightMax)) extADCweightMax = EEPROMextADCweightMax;
+  if (!isnan(EEPROMextADCweightMax)) {
+    extADCweightMax = EEPROMextADCweightMax;
+  } else { eepromDirty = true; }
 
   uint8_t EEPROMbacklightPWM;
   EEPROM.get(EEPROM_ADDR_BACKLIGHT_PWM, EEPROMbacklightPWM);
-  if (EEPROMbacklightPWM <= 100) backlightPWM = EEPROMbacklightPWM;
+  if (EEPROMbacklightPWM <= 100) {
+    backlightPWM = EEPROMbacklightPWM;
+  } else { eepromDirty = true; }
 
   uint8_t EEPROMecho;
   EEPROM.get(EEPROM_ADDR_ECHO, EEPROMecho);
-  if (EEPROMecho <= 1) scpiEchoEnable = (bool) EEPROMecho;
+  if (EEPROMecho <= 1) {
+    scpiEchoEnable = (bool) EEPROMecho;
+  } else { eepromDirty = true; }
 
   uint8_t EEPROMprompt;
   EEPROM.get(EEPROM_ADDR_PROMPT, EEPROMprompt);
-  if (EEPROMprompt <= 1) scpiPromptEnable = (bool) EEPROMprompt;
+  if (EEPROMprompt <= 1) {
+    scpiPromptEnable = (bool) EEPROMprompt;
+  } else { eepromDirty = true; }
+
+  // Write validated defaults back to EEPROM for any uninitialized fields
+  if (eepromDirty) {
+    EEPROM.put(EEPROM_ADDR_CAL_VALUE, calValue);
+    EEPROM.put(EEPROM_ADDR_ZERO_VALUE, zeroValue);
+    EEPROM.put(EEPROM_ADDR_BACKLIGHT, backlightEnable);
+    EEPROM.put(EEPROM_ADDR_UNIT_VAL, unitVal);
+    EEPROM.put(EEPROM_ADDR_CAL_WEIGHT, calWeight);
+    EEPROM.put(EEPROM_ADDR_CAL_UNIT, calUnit);
+    EEPROM.put(EEPROM_ADDR_WEIGHT_MAX, extADCweightMax);
+    EEPROM.put(EEPROM_ADDR_BACKLIGHT_PWM, backlightPWM);
+    EEPROM.put(EEPROM_ADDR_ECHO, (uint8_t) scpiEchoEnable);
+    EEPROM.put(EEPROM_ADDR_PROMPT, (uint8_t) scpiPromptEnable);
+    EEPROM.commit();
+    DBG_PRINTLN("EEPROM: initialized unset fields with defaults");
+  }
 
   ledcWrite(LCD_BACKLIGHT, pwmPercentToDuty(backlightPWM) * (backlightEnable != off));
 
@@ -619,9 +677,11 @@ void TaskExtAnalogRead(void *pvParameters)
 {
   ( void ) pvParameters;
   TickType_t xLastWakeTime = xTaskGetTickCount ();
-  static uint32_t msAtLastWeightChange = millis();
-  static float lastExtADCweight = 0; 
-  static float weightChangeLB = 0; 
+  static uint32_t msAtLastWeightChange = millis();  // Power-down timer (reset on >1 lb change)
+  static float lastExtADCweight = 0;
+  static float weightChangeLB = 0;
+  static int32_t lastExtADCResultRaw = 0;
+  msAtLastIdleActivity = millis();  // Initialize idle timer
 
   xTaskDelayUntil(&xLastWakeTime, EXT_ANALOG_READ_TASK_DELAY/portTICK_PERIOD_MS);
 
@@ -643,7 +703,7 @@ void TaskExtAnalogRead(void *pvParameters)
     extADCResultCh1 = AD7193.singleConversion();
     AD7193.channelSelect(AD7193_CH_0);
     xSemaphoreGive(SPImutex);
-      
+
     // If DIP switch 1 is off (logic high), then scale is configured for single channel.  Otherwise use both channels.
     if(configSwitch1) extADCResult = extADCResultCh0; else extADCResult = extADCResultCh0 + extADCResultCh1;
     extADCweight = (calValue != 0.0f) ? (extADCResult - zeroValue)/calValue - tareValue : 0.0f;
@@ -664,19 +724,51 @@ void TaskExtAnalogRead(void *pvParameters)
     // Signal UI task that new weight data is available
     newWeightReady = true;
 
-    // Check for activity - if no activity timout reached, power down
+    // Compute weight and ADC changes
+    int32_t adcChange = abs(extADCResult - lastExtADCResultRaw);
+    lastExtADCResultRaw = extADCResult;
     weightChangeLB = abs(lastExtADCweight - extADCweight);
     if(unitVal == kg) weightChangeLB = (weightChangeLB * kgtolbScalar);
-    if(weightChangeLB > NO_ACTIVITY_WEIGHT_RANGE_LB) msAtLastWeightChange = millis();
-    if((millis() - msAtLastWeightChange > NO_ACTIVITY_THRESHOLD_MS) && (vinVolts > 5.1))  // If we are on battery (Vin>5.1V), power down.  Otherwise, assume we are USB powered and ignore idle timeout.
+
+    // --- Power-down activity detection (original thresholds) ---
+    bool powerDownActivity = (calValue != 0.0f)
+      ? (weightChangeLB > NO_ACTIVITY_WEIGHT_RANGE_LB)
+      : (adcChange > NO_ACTIVITY_ADC_COUNTS);
+    if(powerDownActivity) {
+      msAtLastWeightChange = millis();
+    }
+    uint32_t msSinceActivity = millis() - msAtLastWeightChange;
+    if((msSinceActivity > NO_ACTIVITY_THRESHOLD_MS) && (vinVolts > 5.1))
     {
       noActivityPowerDownFlag = true;
       DBG_PRINTLN("No activity - power down.");
       powerDown();
     }
-    else 
+    else
     {
       noActivityPowerDownFlag = false;
+    }
+
+    // --- Idle mode activity detection (sensitive threshold: % of full scale) ---
+    // Derive full-scale capacity from ADC range and calibration factor
+    // (calWeight is just the reference weight, not the scale's capacity)
+    float fullScaleWeight = (float)ADC_FULL_SCALE / calValue;  // in calUnit
+    float idleThresholdLB = (calUnit == kg)
+      ? (fullScaleWeight * kgtolbScalar * IDLE_ACTIVITY_PCT / 100.0f)
+      : (fullScaleWeight * IDLE_ACTIVITY_PCT / 100.0f);
+    int32_t idleThresholdADC = (int32_t)((float)ADC_FULL_SCALE * IDLE_ACTIVITY_PCT / 100.0f);
+    bool idleActivity = (calValue != 0.0f)
+      ? (weightChangeLB > idleThresholdLB)
+      : (adcChange > idleThresholdADC);
+    if(idleActivity) {
+      wakeFromIdleMode();
+    }
+    // Enter idle mode after IDLE_MODE_THRESHOLD_MS of no stimulus
+    uint32_t msIdleAge = millis() - msAtLastIdleActivity;
+    if (!cpuIdleMode && (msIdleAge > IDLE_MODE_THRESHOLD_MS))
+    {
+      cpuIdleMode = 1;
+      DBG_PRINTLN("Entering idle mode");
     }
     xTaskDelayUntil(&xLastWakeTime, EXT_ANALOG_READ_TASK_DELAY/portTICK_PERIOD_MS);
   }
@@ -756,6 +848,7 @@ void TaskPowerZeroButton(void *pvParameters)
       {
         // Fresh button press event detected
         powerButtonStat = is_pressed;
+        wakeFromIdleMode();
       }
     }
     else
@@ -813,6 +906,7 @@ void TaskUnitButton(void *pvParameters)
       {
         // Fresh button press event detected
         unitButtonStat = is_pressed;
+        wakeFromIdleMode();
       }
     }
     else
@@ -869,6 +963,7 @@ void TaskBKLButton(void *pvParameters)
       {
         // Fresh button press event detected
         bklButtonStat = is_pressed;
+        wakeFromIdleMode();
       }
     }
     else

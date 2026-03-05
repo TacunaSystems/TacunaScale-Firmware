@@ -377,8 +377,9 @@ static scpi_result_t Sys_VsuppQ(scpi_t *context) {
     return SCPI_RES_OK;
 }
 
-/* SYSTem:POWer:DOWN — trigger power-down (forward-declared in PennerScale.cpp) */
+/* Forward declarations for functions in PennerScale.cpp */
 extern void powerDown(void);
+extern void wakeFromIdleMode(void);
 static scpi_result_t Sys_PowerDown(scpi_t *context) {
     (void) context;
     powerDown();
@@ -598,8 +599,13 @@ void TaskSCPI(void *pvParameters) {
 
     uint8_t buf[64];
     for (;;) {
-        int avail = Serial.available();
-        if (avail > 0) {
+        // Drain all available bytes before sleeping to avoid FIFO overflow
+        // (at 115200 baud, ~576 bytes can arrive during a 50ms sleep)
+        if (Serial.available() > 0) {
+            wakeFromIdleMode();
+        }
+        while (Serial.available() > 0) {
+            int avail = Serial.available();
             int toRead = (avail > (int) sizeof(buf)) ? (int) sizeof(buf) : avail;
             int n = Serial.readBytes(buf, toRead);
             if (n > 0) {
@@ -622,6 +628,6 @@ void TaskSCPI(void *pvParameters) {
                 }
             }
         }
-        vTaskDelay(10 / portTICK_PERIOD_MS);
+        vTaskDelay(50 / portTICK_PERIOD_MS);
     }
 }
