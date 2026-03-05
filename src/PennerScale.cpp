@@ -238,10 +238,11 @@ void setup() {
   setCpuFrequencyMhz(CPU_SPEED);
 
   // Fully deinit unused radios to save power and free memory
-  esp_wifi_stop();
-  esp_wifi_deinit();
-  esp_bt_controller_disable();
-  esp_bt_controller_deinit();
+  esp_err_t err;
+  err = esp_wifi_stop();        if (err != ESP_OK) DBG_PRINTF("wifi stop: %s\n", esp_err_to_name(err));
+  err = esp_wifi_deinit();      if (err != ESP_OK) DBG_PRINTF("wifi deinit: %s\n", esp_err_to_name(err));
+  err = esp_bt_controller_disable(); if (err != ESP_OK) DBG_PRINTF("bt disable: %s\n", esp_err_to_name(err));
+  err = esp_bt_controller_deinit();  if (err != ESP_OK) DBG_PRINTF("bt deinit: %s\n", esp_err_to_name(err));
 
 #if SCPI_DEBUG
   dbg_log_init();
