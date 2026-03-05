@@ -119,11 +119,9 @@ const float  PWR_5V_LVL_VDIV_SCLR = (1/0.5); // // Multiply ADC Volts by this sc
 #define BAT_IND_X_POS (u8g2.getDisplayWidth() - BAT_IND_WIDTH)
 
 // FreeRTOS constants
-//  240, 160, 80    <<< For all XTAL types
-//  40, 20, 10      <<< For 40MHz XTAL
-#define CPU_SPEED_ACTIVE 40  // 40 MHz (XTAL). APB=40MHz, max SPI=20MHz.
-#define CPU_SPEED_IDLE   40  // No idle scaling — marginal savings not worth complexity.
-#define IDLE_MODE_THRESHOLD_MS 10000  // 10 seconds of stable weight before entering idle mode
+//  Valid CPU speeds: 240, 160, 80 (all XTAL types), 40, 20, 10 (40MHz XTAL only)
+#define CPU_SPEED 40  // 40 MHz (XTAL). APB=40MHz, max SPI=20MHz.
+#define IDLE_MODE_THRESHOLD_MS 10000  // Seconds of stable weight before entering idle mode
 
 // U8g2 Contructor (Frame Buffer) — Hardware SPI for ~2ms frame transfer vs ~73ms software
 U8G2_ST7567_ENH_DG128064I_F_4W_HW_SPI u8g2(U8G2_R2, /* cs=*/ LCD_CS, /* dc=*/ LCD_A0, /* reset=*/ LCD_RST);
@@ -214,12 +212,11 @@ TaskHandle_t xHandleTaskBKLButton = NULL;
 TaskHandle_t xHandleTaskUI = NULL;
 TaskHandle_t xHandleTaskSCPI = NULL;
 
-// Wake CPU from idle mode (called on button press)
+// Wake from idle mode (called on button press or ADC activity)
 void wakeFromIdleMode() {
     if (cpuIdleMode) {
         cpuIdleMode = 0;
-        setCpuFrequencyMhz(CPU_SPEED_ACTIVE);
-        DBG_PRINTF("Wake from idle - CPU %d MHz\n", CPU_SPEED_ACTIVE);
+        DBG_PRINTLN("Activity detected - exiting idle mode");
     }
 }
 
@@ -234,7 +231,7 @@ void setup() {
   e_unitVal EEPROMcalUnit;
   float EEPROMextADCweightMax;
 
-  setCpuFrequencyMhz(CPU_SPEED_ACTIVE);
+  setCpuFrequencyMhz(CPU_SPEED);
 
   // Fully deinit unused radios to save power and free memory
   esp_wifi_stop();
@@ -745,12 +742,11 @@ void TaskExtAnalogRead(void *pvParameters)
     {
       noActivityPowerDownFlag = false;
     }
-    // Adaptive CPU speed: drop to idle speed after IDLE_MODE_THRESHOLD_MS of stable weight
+    // Enter idle mode after IDLE_MODE_THRESHOLD_MS of stable weight
     if (!cpuIdleMode && (msIdle > IDLE_MODE_THRESHOLD_MS))
     {
       cpuIdleMode = 1;
-      setCpuFrequencyMhz(CPU_SPEED_IDLE);
-      DBG_PRINTF("Idle mode - CPU %d MHz\n", CPU_SPEED_IDLE);
+      DBG_PRINTLN("Entering idle mode");
     }
     xTaskDelayUntil(&xLastWakeTime, EXT_ANALOG_READ_TASK_DELAY/portTICK_PERIOD_MS);
   }
