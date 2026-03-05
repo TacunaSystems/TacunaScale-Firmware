@@ -306,36 +306,71 @@ void setup() {
   EEPROM.get(EEPROM_ADDR_CAL_UNIT, EEPROMcalUnit);
   EEPROM.get(EEPROM_ADDR_WEIGHT_MAX, EEPROMextADCweightMax);
 
+  // Validate EEPROM values; use compile-time defaults for any uninitialized fields.
+  // Track whether any field needed fixing so we can write defaults back.
+  bool eepromDirty = false;
+
   // If calValue is a real number, that means we've calibrated the unit and calValue and zeroValue are legitimate values
   if ((!isnan(EEPROMcalValue)) && (EEPROMcalValue>0))
   {
     calValue = EEPROMcalValue;
     zeroValue = EEPROMZeroValue;
-  } 
-  if (EEPROMbacklightEnable >= 0 && EEPROMbacklightEnable <= 2) backlightEnable = EEPROMbacklightEnable;
-  if (EEPROMunitVal >= 0 && EEPROMunitVal <= 1) unitVal = EEPROMunitVal;  
-  if (EEPROMcalWeight != 4294967295) calWeight = EEPROMcalWeight;  
+  } else { eepromDirty = true; }
+  if (EEPROMbacklightEnable >= 0 && EEPROMbacklightEnable <= 2) {
+    backlightEnable = EEPROMbacklightEnable;
+  } else { eepromDirty = true; }
+  if (EEPROMunitVal >= 0 && EEPROMunitVal <= 1) {
+    unitVal = EEPROMunitVal;
+  } else { eepromDirty = true; }
+  if (EEPROMcalWeight != 4294967295) {
+    calWeight = EEPROMcalWeight;
+  } else { eepromDirty = true; }
   if (EEPROMcalUnit >= 0 && EEPROMcalUnit <= 1)
   {
-    calUnit = EEPROMcalUnit; 
+    calUnit = EEPROMcalUnit;
   }
   else
   {
     calUnit = unitVal;
+    eepromDirty = true;
   }
-  if (!isnan(EEPROMextADCweightMax)) extADCweightMax = EEPROMextADCweightMax;
+  if (!isnan(EEPROMextADCweightMax)) {
+    extADCweightMax = EEPROMextADCweightMax;
+  } else { eepromDirty = true; }
 
   uint8_t EEPROMbacklightPWM;
   EEPROM.get(EEPROM_ADDR_BACKLIGHT_PWM, EEPROMbacklightPWM);
-  if (EEPROMbacklightPWM <= 100) backlightPWM = EEPROMbacklightPWM;
+  if (EEPROMbacklightPWM <= 100) {
+    backlightPWM = EEPROMbacklightPWM;
+  } else { eepromDirty = true; }
 
   uint8_t EEPROMecho;
   EEPROM.get(EEPROM_ADDR_ECHO, EEPROMecho);
-  if (EEPROMecho <= 1) scpiEchoEnable = (bool) EEPROMecho;
+  if (EEPROMecho <= 1) {
+    scpiEchoEnable = (bool) EEPROMecho;
+  } else { eepromDirty = true; }
 
   uint8_t EEPROMprompt;
   EEPROM.get(EEPROM_ADDR_PROMPT, EEPROMprompt);
-  if (EEPROMprompt <= 1) scpiPromptEnable = (bool) EEPROMprompt;
+  if (EEPROMprompt <= 1) {
+    scpiPromptEnable = (bool) EEPROMprompt;
+  } else { eepromDirty = true; }
+
+  // Write validated defaults back to EEPROM for any uninitialized fields
+  if (eepromDirty) {
+    EEPROM.put(EEPROM_ADDR_CAL_VALUE, calValue);
+    EEPROM.put(EEPROM_ADDR_ZERO_VALUE, zeroValue);
+    EEPROM.put(EEPROM_ADDR_BACKLIGHT, backlightEnable);
+    EEPROM.put(EEPROM_ADDR_UNIT_VAL, unitVal);
+    EEPROM.put(EEPROM_ADDR_CAL_WEIGHT, calWeight);
+    EEPROM.put(EEPROM_ADDR_CAL_UNIT, calUnit);
+    EEPROM.put(EEPROM_ADDR_WEIGHT_MAX, extADCweightMax);
+    EEPROM.put(EEPROM_ADDR_BACKLIGHT_PWM, backlightPWM);
+    EEPROM.put(EEPROM_ADDR_ECHO, (uint8_t) scpiEchoEnable);
+    EEPROM.put(EEPROM_ADDR_PROMPT, (uint8_t) scpiPromptEnable);
+    EEPROM.commit();
+    DBG_PRINTLN("EEPROM: initialized unset fields with defaults");
+  }
 
   ledcWrite(LCD_BACKLIGHT, pwmPercentToDuty(backlightPWM) * (backlightEnable != off));
 
