@@ -782,6 +782,8 @@ void TaskExtAnalogRead(void *pvParameters)
       } else {
         adaptiveTracking = false;
       }
+    } else {
+      adaptiveTracking = false;
     }
     extADCRunAV.add(extADCweight);
     taskEXIT_CRITICAL(&measMux);
