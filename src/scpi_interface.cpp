@@ -5,6 +5,7 @@
 #include <Arduino.h>
 #include <EEPROM.h>
 #include <cstring>
+#include <cfloat>
 #include "appconfig.h"
 #include "scpi_interface.h"
 #include "RunningAverage.h"
@@ -372,7 +373,7 @@ static scpi_result_t Conf_OverCap(scpi_t *context) {
     if (!SCPI_ParamNumber(context, scpi_special_numbers_def, &val, TRUE)) {
         return SCPI_RES_ERR;
     }
-    if (val.content.value <= 0.0 || !isfinite(val.content.value)) {
+    if (val.content.value <= 0.0 || val.content.value > (double)FLT_MAX) {
         SCPI_ErrorPush(context, SCPI_ERROR_ILLEGAL_PARAMETER_VALUE);
         return SCPI_RES_ERR;
     }
@@ -463,7 +464,7 @@ static scpi_result_t Cal_Value(scpi_t *context) {
     if (!SCPI_ParamNumber(context, scpi_special_numbers_def, &val, TRUE)) {
         return SCPI_RES_ERR;
     }
-    if (val.content.value <= 0.0 || !isfinite(val.content.value)) {
+    if (val.content.value <= 0.0 || val.content.value > (double)FLT_MAX) {
         SCPI_ErrorPush(context, SCPI_ERROR_ILLEGAL_PARAMETER_VALUE);
         return SCPI_RES_ERR;
     }
