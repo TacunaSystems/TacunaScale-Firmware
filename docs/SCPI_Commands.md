@@ -1,9 +1,33 @@
-# SCPI Command Reference
+# TacunaScale SCPI Command Reference
 
-TacunaScale — UART interface at 115200 baud, 8N1.
+**Firmware:** 1.1.0b | **Updated:** 2026-03-06
 
-Commands follow the SCPI-2 (Standard Commands for Programmable Instruments) protocol.
-Terminate each command with a newline (`\n`). Queries end with `?`.
+## Communication
+
+| Parameter | Value |
+|-----------|-------|
+| Interface | UART (serial) |
+| Baud rate | 115200 |
+| Data bits | 8 |
+| Parity | None |
+| Stop bits | 1 |
+| Line terminator | `\n` (newline) |
+
+## Command Syntax
+
+Commands follow the **SCPI-2** (Standard Commands for Programmable Instruments)
+protocol. Queries end with `?` and return a value. Set commands have no response.
+
+**Short-form notation:** uppercase letters are the required abbreviation,
+lowercase letters may be omitted. For example, `CONFigure:UNIT` can be sent as
+`CONF:UNIT`. Both forms are equivalent.
+
+**Echo and prompt:** by default the scale echoes each received command and
+prefixes responses with `> `. Both behaviors are configurable via
+`SYSTem:ECHO` and `SYSTem:PROMpt`.
+
+**Errors:** invalid commands push an error onto the SCPI error queue, readable
+via `SYSTem:ERRor?`. The queue holds up to 17 entries.
 
 ## IEEE 488.2 Common Commands
 
@@ -46,11 +70,11 @@ Terminate each command with a newline (`\n`). Queries end with `?`.
 | `MEASure:WEIGht:MAX?` | Peak weight recorded since last reset | Float |
 | `MEASure:WEIGht:MAX <val>` | Set/reset peak weight tracker (persists to EEPROM) | — |
 | `MEASure:WEIGht:AVERage:COUNt?` | Samples currently in running average buffer | Int |
-| `MEASure:WEIGht:AVERage:SIZE?` | Running average buffer size (compile-time constant) | Int |
+| `MEASure:WEIGht:AVERage:SIZE?` | Running average buffer size (compile-time, default 5) | Int |
 | `MEASure:WEIGht:SDEViation?` | Standard deviation of running average buffer | Float |
-| `MEASure:WEIGht:STABle?` | Stability flag (1 = settled, 0 = unstable). Settled when std dev < (threshold × capacity) AND buffer full | Bool (0/1) |
+| `MEASure:WEIGht:STABle?` | Stability flag: 1 = settled, 0 = unstable. Settled when std dev < (threshold x capacity) AND buffer full | Bool (0/1) |
 | `MEASure:WEIGht:GROSS?` | Weight before tare subtraction, in current display unit | Float |
-| `MEASure:WEIGht:OVERload?` | Overload flag (1 = abs(weight) > capacity, 0 = OK) | Bool (0/1) |
+| `MEASure:WEIGht:OVERload?` | Overload flag: 1 = abs(weight) > capacity, 0 = OK | Bool (0/1) |
 
 ## Configuration Commands
 
@@ -61,22 +85,47 @@ Terminate each command with a newline (`\n`). Queries end with `?`.
 | `CONFigure:TARE [<value>]` | Tare — no param: auto-tare from current reading. With param: set tare offset directly (in cal units) | Float (optional) |
 | `CONFigure:TARE?` | Query current tare offset | — |
 | `CONFigure:ZERO` | Set current ADC reading as zero reference (persists to EEPROM) | — |
+
+### ADC Settings
+
+| Command | Description | Parameter |
+|---------|-------------|-----------|
 | `CONFigure:ADC:RATE <1-1023>` | Set AD7193 filter output rate (runtime only) | Int |
 | `CONFigure:ADC:RATE?` | Query current ADC rate setting | — |
 | `CONFigure:ADC:FILTer <SINC3\|SINC4>` | Set digital filter type (runtime only) | `SINC3` or `SINC4` |
 | `CONFigure:ADC:FILTer?` | Query current filter type | — |
 | `CONFigure:ADC:NOTCh <ON\|OFF>` | Enable/disable 50/60 Hz notch rejection (runtime only) | Boolean |
 | `CONFigure:ADC:NOTCh?` | Query notch filter state | — |
-| `CONFigure:STABility:THReshold <val>` | Stability threshold as fraction of overload capacity (persists to EEPROM, default 0.0002 = 0.02%) | Float (> 0) |
+
+### Stability and Overload
+
+| Command | Description | Parameter |
+|---------|-------------|-----------|
+| `CONFigure:STABility:THReshold <val>` | Stability threshold as fraction of capacity (persists, default 0.0002 = 0.02%) | Float (> 0) |
 | `CONFigure:STABility:THReshold?` | Query current stability threshold | — |
-| `CONFigure:OVERload:CAPacity <val>` | Overload capacity for `MEAS:WEIG:OVER?` in display units (persists to EEPROM, default 500) | Float (> 0) |
+| `CONFigure:OVERload:CAPacity <val>` | Overload capacity in display units (persists, default 500). Auto-converts when display unit changes. | Float (> 0) |
 | `CONFigure:OVERload:CAPacity?` | Query current overload capacity | — |
-| `CONFigure:FILTer:ADAPtive <ON\|OFF>` | Enable/disable adaptive filter (persists to EEPROM, default ON) | Boolean |
+
+### Adaptive Filter
+
+| Command | Description | Parameter |
+|---------|-------------|-----------|
+| `CONFigure:FILTer:ADAPtive <ON\|OFF>` | Enable/disable adaptive filter (persists, default ON) | Boolean |
 | `CONFigure:FILTer:ADAPtive?` | Query adaptive filter state | — |
 | `CONFigure:FILTer:ADAPtive:THReshold <val>` | Deviation threshold as % of capacity (persists, default 1.0) | Float (> 0) |
 | `CONFigure:FILTer:ADAPtive:THReshold?` | Query adaptive filter threshold | — |
-| `CONFigure:FILTer:ADAPtive:TIME <val>` | Sustained deviation window in µs before reset (persists, default 750000) | Int (1-60000000) |
+| `CONFigure:FILTer:ADAPtive:TIME <val>` | Sustained deviation window in microseconds (persists, default 750000) | Int (1-60000000) |
 | `CONFigure:FILTer:ADAPtive:TIME?` | Query adaptive filter time window | — |
+
+The adaptive filter detects sustained directional weight changes (e.g. a new
+load placed on the scale) and clears the running average for immediate display
+response. Oscillatory motion (e.g. a patient shifting on a chair scale) resets
+the detection timer, so normal averaging continues undisturbed.
+
+Each new reading is compared to the current average. If the deviation exceeds
+`threshold x capacity / 100` and persists in the same direction for longer than
+the configured time window, the running average buffer is cleared. The time-based
+window automatically scales with sample rate.
 
 ## Calibration Commands
 
@@ -92,8 +141,8 @@ All set commands persist immediately to EEPROM.
 | `CALibration:WEIGht <val>` | Set calibration weight | UInt32 |
 | `CALibration:UNIT?` | Query calibration unit | — |
 | `CALibration:UNIT <KG\|LB>` | Set calibration unit | `KG` or `LB` |
-| `CALibration:ZERO:EXEC` | Block until settled (~2.5s), capture zero reference, persist | — |
-| `CALibration:SPAN:EXEC` | Block until settled (~2.5s), auto-compute calValue, persist | — |
+| `CALibration:ZERO:EXEC` | Block until settled (~2.5 s), capture zero reference, persist | — |
+| `CALibration:SPAN:EXEC` | Block until settled (~2.5 s), auto-compute calValue, persist | — |
 
 ## System Commands
 
@@ -101,52 +150,36 @@ All set commands persist immediately to EEPROM.
 |---------|-------------|-----------|
 | `SYSTem:BACKlight <ON\|OFF>` | Turn LCD backlight on/off | Boolean |
 | `SYSTem:BACKlight?` | Query backlight state | — |
-| `SYSTem:BACKlight:PWM <0-100>` | Set backlight PWM duty cycle (percent, persists to EEPROM) | Int (0-100) |
+| `SYSTem:BACKlight:PWM <0-100>` | Set backlight PWM duty cycle (percent, persists) | Int (0-100) |
 | `SYSTem:BACKlight:PWM?` | Query backlight PWM duty cycle (percent) | — |
 | `SYSTem:POWer:VOLTage:BATTery?` | Battery input voltage | — |
-| `SYSTem:POWer:VOLTage:SUPPly?` | 5V rail voltage | — |
+| `SYSTem:POWer:VOLTage:SUPPly?` | 5 V rail voltage | — |
 | `SYSTem:POWer:DOWN` | Trigger power-down sequence | — |
-| `SYSTem:ECHO <ON\|OFF>` | Enable/disable command echo (persists to EEPROM) | Boolean |
+| `SYSTem:POWer:GOOD:VDD?` | 3.3 V rail power good signal | Bool (0/1) |
+| `SYSTem:POWer:GOOD:V5A?` | 5 V rail power good signal | Bool (0/1) |
+| `SYSTem:ECHO <ON\|OFF>` | Enable/disable command echo (persists) | Boolean |
 | `SYSTem:ECHO?` | Query echo state | — |
-| `SYSTem:PROMpt <ON\|OFF>` | Enable/disable prompt after responses (persists to EEPROM) | Boolean |
+| `SYSTem:PROMpt <ON\|OFF>` | Enable/disable response prompt prefix (persists) | Boolean |
 | `SYSTem:PROMpt?` | Query prompt state | — |
-| `SYSTem:POWer:GOOD:VDD?` | 3.3V rail power good signal | Bool (0/1) |
-| `SYSTem:POWer:GOOD:V5A?` | 5V rail power good signal | Bool (0/1) |
 | `SYSTem:CONFig:SW1?` | DIP switch 1 state (read at boot) | Bool (0/1) |
 | `SYSTem:CONFig:SW2?` | DIP switch 2 state (read at boot) | Bool (0/1) |
 | `SYSTem:FW?` | Firmware version string | String |
-| `SYSTem:EEPROM?` | Dump all EEPROM values (comma-separated key=value pairs) | — |
+| `SYSTem:EEPROM?` | Dump all persisted EEPROM values (comma-separated key=value) | — |
 | `SYSTem:EEPROM:COMMit` | Flush pending EEPROM writes to flash | — |
-
-## Diagnostic Commands
-
-Available when `FREERTOS_DIAG` is enabled in `appconfig.h` (default: off).
-
-| Command | Description |
-|---------|-------------|
-| `SYSTem:DIAGnostic:STATS?` | FreeRTOS CPU run-time percentage per task |
-| `SYSTem:DIAGnostic:LIST?` | FreeRTOS task state, priority, and stack watermark |
-
-## Debug Log Commands
-
-Available when `SCPI_DEBUG` is enabled in `appconfig.h` (default: on).
-
-| Command | Description |
-|---------|-------------|
-| `SYSTem:LOG?` | Read debug log from RAM ring buffer (2 KB) |
-| `SYSTem:LOG:CLEar` | Clear the debug log |
+| `SYSTem:LOG?` | Read debug log from RAM ring buffer (2 KB) | — |
+| `SYSTem:LOG:CLEar` | Clear the debug log | — |
 
 ## EEPROM Map
 
-All calibration values persist across power cycles. The `SYSTem:EEPROM?` command
-reads all fields directly from flash.
+All values persist across power cycles. The `SYSTem:EEPROM?` command reads all
+fields directly from flash.
 
 | Address | Field | Type | Persisted by |
 |---------|-------|------|-------------|
 | 0 | calValue | float | `CAL:VAL`, `CAL:SPAN:EXEC`, calibration routine |
 | 4 | zeroValue | int32_t | `CAL:ZERO`, `CAL:ZERO:EXEC`, `CAL:SPAN:EXEC`, `CONF:ZERO`, calibration routine |
 | 8 | backlightEnable | enum (int) | Power-down |
-| 12 | unitVal | enum (int) | Power-down |
+| 12 | unitVal | enum (int) | `CONF:OVER:CAP`, power-down |
 | 16 | calWeight | uint32_t | `CAL:WEIG`, calibration routine |
 | 20 | calUnit | enum (int) | `CAL:UNIT`, calibration routine |
 | 24 | extADCweightMax | float | `MEAS:WEIG:MAX`, power-down |
@@ -159,28 +192,12 @@ reads all fields directly from flash.
 | 40 | adaptiveFilterPct | float | `CONF:FILT:ADAP:THR`, power-down |
 | 44 | adaptiveFilterTimeUs | uint32_t | `CONF:FILT:ADAP:TIME`, power-down |
 
-## Adaptive Filter
-
-The running average (default 5 samples at ~4 Hz) smooths noise but delays response
-to real weight changes by ~1.25 seconds. The **adaptive filter** detects sustained
-directional changes and resets the average for fast settle, while preserving
-averaging during oscillatory motion (e.g. a patient shifting on a chair scale).
-
-**Algorithm:** Each new reading is compared to the current average. If the deviation
-exceeds `threshold × capacity / 100` and persists in the same direction for longer
-than the configured time window, the running average buffer is cleared. Direction
-reversals (oscillation) restart the timer, so normal averaging continues undisturbed.
-The time-based window automatically scales with sample rate — no tuning needed when
-the ADC rate changes.
-
-**Defaults:** enabled, threshold 1.0% of capacity, time window 750000 µs (750 ms).
-
 ## Examples
 
 ```
 # Identify the instrument
 *IDN?
-→ Tacuna Systems,TacunaScale,00000000,1.0.0
+→ Tacuna Systems,TacunaScale,00000000,1.1.0b
 
 # Read weight
 MEAS:WEIG?
@@ -194,7 +211,10 @@ CONF:UNIT LB
 
 # Read all EEPROM values
 SYST:EEPROM?
-→ calValue=7168.220215,zeroValue=8295856,backlight=1,unit=KG,calWeight=100,calUnit=KG,weightMax=25.4321,backlightPWM=31,echo=1,prompt=1,stabThresh=0.0002,overCap=500.0000
+→ calValue=7168.220215,zeroValue=8295856,backlight=1,unit=KG,
+   calWeight=100,calUnit=KG,weightMax=25.4321,backlightPWM=31,
+   echo=1,prompt=1,stabThresh=0.0002,overCap=500.0000,
+   adaptEn=1,adaptThr=1.0000,adaptTimeUs=750000
 
 # Reset peak weight
 MEAS:WEIG:MAX 0
@@ -208,10 +228,10 @@ CAL:UNIT KG
 CAL:WEIG 100
 # (unload scale)
 CAL:ZERO:EXEC
-→ (blocks ~2.5s, captures zero)
+→ (blocks ~2.5 s, captures zero)
 # (load 100 kg reference weight)
 CAL:SPAN:EXEC
-→ (blocks ~2.5s, computes calValue)
+→ (blocks ~2.5 s, computes calValue)
 MEAS:WEIG?
 → 100.0000
 
@@ -223,9 +243,9 @@ CONF:ADC:FILT SINC3
 CONF:ADC:FILT?
 → SINC3
 
-# Stability detection (ESP32-to-ESP32 integration)
+# Stability detection
 # Threshold is a fraction of overload capacity (default 0.0002 = 0.02%)
-# With 500 lb capacity: stable when sdev < 0.0002 * 500 = 0.1 lb
+# With 500 lb capacity: stable when sdev < 0.0002 × 500 = 0.1 lb
 MEAS:WEIG:SDEV?
 → 0.0234
 MEAS:WEIG:STAB?
@@ -254,4 +274,18 @@ CONF:OVER:CAP 0.001
 MEAS:WEIG:OVER?
 → 1
 CONF:OVER:CAP 500
+
+# Adaptive filter tuning
+CONF:FILT:ADAP?
+→ 1
+CONF:FILT:ADAP:THR?
+→ 1
+CONF:FILT:ADAP:TIME?
+→ 750000
+# Tighten threshold to 0.5% of capacity
+CONF:FILT:ADAP:THR 0.5
+# Shorten detection window to 500 ms
+CONF:FILT:ADAP:TIME 500000
+# Disable adaptive filter (pure running average)
+CONF:FILT:ADAP OFF
 ```
