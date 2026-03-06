@@ -639,10 +639,13 @@ void TaskUI(void *pvParameters)
       if(unitVal == kg) {
         unitVal = lb;
         overloadCapacity *= kgtolbScalar;
+        extADCweightMax *= kgtolbScalar;
       } else if(unitVal == lb) {
         unitVal = kg;
         overloadCapacity /= kgtolbScalar;
+        extADCweightMax /= kgtolbScalar;
       }
+      extADCRunAV.clear();
     }
     else if (unitButtonFlag == long_press_flag)
     {

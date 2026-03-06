@@ -234,8 +234,14 @@ static scpi_result_t Conf_Unit(scpi_t *context) {
     }
     e_unitVal newUnit = (e_unitVal) val;
     if (newUnit != unitVal) {
-        if (newUnit == lb) overloadCapacity *= kgtolbScalar;
-        else               overloadCapacity /= kgtolbScalar;
+        if (newUnit == lb) {
+            overloadCapacity *= kgtolbScalar;
+            extADCweightMax *= kgtolbScalar;
+        } else {
+            overloadCapacity /= kgtolbScalar;
+            extADCweightMax /= kgtolbScalar;
+        }
+        extADCRunAV.clear();
         unitVal = newUnit;
     }
     return SCPI_RES_OK;
