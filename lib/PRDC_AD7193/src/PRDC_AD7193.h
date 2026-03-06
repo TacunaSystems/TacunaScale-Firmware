@@ -191,6 +191,8 @@ class PRDC_AD7193 {
     uint32_t getRate() const { return _rate; }
     uint32_t getFilter() const { return _filter; }
     uint32_t getNotchFilter() const { return _notch_filter; }
+    void setFilterDeferred(uint32_t filter) { _filter = filter; }
+    void setNotchFilterDeferred(bool notch) { _notch_filter = notch ? AD7193_MODE_REJ60 : AD7193_MODE_NO_REJ60; }
     
   private:
     SPISettings _spiSettings;

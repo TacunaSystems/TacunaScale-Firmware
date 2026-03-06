@@ -35,7 +35,6 @@ extern const float kgtolbScalar;
 extern const String unitAbbr[];
 extern portMUX_TYPE measMux;
 extern PRDC_AD7193 AD7193;
-extern SemaphoreHandle_t SPImutex;
 
 /* ------------------------------------------------------------------ */
 /*  SCPI interface callbacks                                          */
@@ -250,9 +249,7 @@ static scpi_result_t Conf_AdcRateQ(scpi_t *context) {
 static scpi_result_t Conf_AdcFilter(scpi_t *context) {
     int32_t val;
     if (!SCPI_ParamChoice(context, filter_choices, &val, TRUE)) return SCPI_RES_ERR;
-    xSemaphoreTake(SPImutex, portMAX_DELAY);
-    AD7193.setFilter((uint32_t) val);
-    xSemaphoreGive(SPImutex);
+    AD7193.setFilterDeferred((uint32_t) val);
     return SCPI_RES_OK;
 }
 
@@ -269,9 +266,7 @@ static scpi_result_t Conf_AdcFilterQ(scpi_t *context) {
 static scpi_result_t Conf_AdcNotch(scpi_t *context) {
     scpi_bool_t val;
     if (!SCPI_ParamBool(context, &val, TRUE)) return SCPI_RES_ERR;
-    xSemaphoreTake(SPImutex, portMAX_DELAY);
-    AD7193.enableNotchFilter((bool) val);
-    xSemaphoreGive(SPImutex);
+    AD7193.setNotchFilterDeferred((bool) val);
     return SCPI_RES_OK;
 }
 
