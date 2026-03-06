@@ -49,8 +49,7 @@
 #define VIN_LVL 5       //  10k & 3.3k Vdiv => 1/0.248
 #define V5_A_LVL 6
 #define V5_A_EN 7
-#define V3V3_PG 18
-#define V5_A_PG 35
+// V3V3_PG and V5_A_PG defined in appconfig.h
 // Battery level macro definition
 #define BATV_TO_BAR(V) ((V) * 4.8f - 26.4f)
 
@@ -89,7 +88,7 @@ const float  PWR_5V_LVL_VDIV_SCLR = (1/0.5); // // Multiply ADC Volts by this sc
 #define LONG_PRESS_LOOP_DELAY 10 // 10ms 
 #define LONG_PRESS_COUNT_THRESHOLD 150 // multiples of LONG_PRESS_LOOP_DELAY (ex. for LONG_PRESS_DELAY = 10ms (100 counts = 1s)
 #define DEBOUNCE_TIME 50
-#define SCALE_CAP 500
+// SCALE_CAP defined in appconfig.h
 #define SCALE_CAP_UNIT lb
 #define MIN_CAL_VAL 25
 #define MAX_CAL_VAL 500
@@ -187,8 +186,10 @@ float tareValue = 0.0f; // default tare value
 uint32_t calWeight = MIN_CAL_VAL; // default calibration weight
 e_unitVal calUnit = DEFAULT_UNIT; // default calibration unit
 
-const float kgtolbScalar = 2.20462;
+extern const float kgtolbScalar = 2.20462;
 const String unitAbbr[] = {"kg", "lb"};
+float stabThreshold   = STAB_THRESH_DEFAULT;
+float overloadCapacity = OVER_CAP_DEFAULT;
 bool updateLCDWeight = true;
 volatile bool newWeightReady = false;
 bool noActivityPowerDownFlag = false;
@@ -260,6 +261,10 @@ void setup() {
   // Enable 5V_A
   pinMode(V5_A_EN, OUTPUT);
   digitalWrite(V5_A_EN, HIGH);
+
+  // Power good inputs
+  pinMode(V3V3_PG, INPUT);
+  pinMode(V5_A_PG, INPUT);
 
   // Disable LCD backlight
   pinMode(LCD_BACKLIGHT, OUTPUT);
@@ -358,6 +363,18 @@ void setup() {
     scpiPromptEnable = (bool) EEPROMprompt;
   } else { eepromDirty = true; }
 
+  float EEPROMstabThresh;
+  EEPROM.get(EEPROM_ADDR_STAB_THRESH, EEPROMstabThresh);
+  if (!isnan(EEPROMstabThresh) && EEPROMstabThresh > 0) {
+    stabThreshold = EEPROMstabThresh;
+  } else { eepromDirty = true; }
+
+  float EEPROMoverCap;
+  EEPROM.get(EEPROM_ADDR_OVER_CAP, EEPROMoverCap);
+  if (!isnan(EEPROMoverCap) && EEPROMoverCap > 0) {
+    overloadCapacity = EEPROMoverCap;
+  } else { eepromDirty = true; }
+
   // Write validated defaults back to EEPROM for any uninitialized fields
   if (eepromDirty) {
     EEPROM.put(EEPROM_ADDR_CAL_VALUE, calValue);
@@ -370,6 +387,8 @@ void setup() {
     EEPROM.put(EEPROM_ADDR_BACKLIGHT_PWM, backlightPWM);
     EEPROM.put(EEPROM_ADDR_ECHO, (uint8_t) scpiEchoEnable);
     EEPROM.put(EEPROM_ADDR_PROMPT, (uint8_t) scpiPromptEnable);
+    EEPROM.put(EEPROM_ADDR_STAB_THRESH, stabThreshold);
+    EEPROM.put(EEPROM_ADDR_OVER_CAP, overloadCapacity);
     EEPROM.commit();
     DBG_PRINTLN("EEPROM: initialized unset fields with defaults");
   }
@@ -1337,6 +1356,14 @@ void powerDown(void)
   uint8_t EEPROMprompt;
   EEPROM.get(EEPROM_ADDR_PROMPT, EEPROMprompt);
   if (EEPROMprompt != (uint8_t)scpiPromptEnable) EEPROM.put(EEPROM_ADDR_PROMPT, (uint8_t)scpiPromptEnable);
+
+  float EEPROMstabThresh;
+  EEPROM.get(EEPROM_ADDR_STAB_THRESH, EEPROMstabThresh);
+  if (EEPROMstabThresh != stabThreshold) EEPROM.put(EEPROM_ADDR_STAB_THRESH, stabThreshold);
+
+  float EEPROMoverCap;
+  EEPROM.get(EEPROM_ADDR_OVER_CAP, EEPROMoverCap);
+  if (EEPROMoverCap != overloadCapacity) EEPROM.put(EEPROM_ADDR_OVER_CAP, overloadCapacity);
 
   DBG_PRINTF("EEPROMextADCweightMax: %f\n", EEPROMextADCweightMax);
   DBG_PRINTF("extADCweightMax: %f\n", extADCweightMax);

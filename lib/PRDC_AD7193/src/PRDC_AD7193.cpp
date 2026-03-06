@@ -442,9 +442,11 @@ uint32_t PRDC_AD7193::singleConversion() {
     Serial.println(F("singleConversion()"));
   #endif
   
-  uint32_t command = AD7193_MODE_SEL(AD7193_MODE_SINGLE) | 
+  uint32_t command = AD7193_MODE_SEL(AD7193_MODE_SINGLE) |
+                     _filter |
+                     _notch_filter |
                      AD7193_MODE_CLKSRC(_clock_mode) |
-                     AD7193_MODE_RATE(_rate); 
+                     AD7193_MODE_RATE(_rate);
   this->beginTransaction();
   this->setRegister(AD7193_REG_MODE, command, 3);
   this->waitReady();
@@ -463,10 +465,12 @@ uint32_t PRDC_AD7193::continuousReadAverage(uint32_t sampleNumber) {
   #endif
   
   uint32_t samplesAverage = 0;  
-  uint32_t command = AD7193_MODE_SEL(AD7193_MODE_CONT) | 
+  uint32_t command = AD7193_MODE_SEL(AD7193_MODE_CONT) |
+                     _filter |
+                     _notch_filter |
                      AD7193_MODE_CLKSRC(_clock_mode) |
                      AD7193_MODE_RATE(_rate);
-            
+
   this->beginTransaction();
   this->setRegister(AD7193_REG_MODE, command, 3);
   for(uint32_t i = 0; i < sampleNumber; i++) {
@@ -474,7 +478,7 @@ uint32_t PRDC_AD7193::continuousReadAverage(uint32_t sampleNumber) {
     samplesAverage += this->getRegister(AD7193_REG_DATA, 3);
   }
   this->endTransaction();
-  
+
   return samplesAverage/sampleNumber;
 }
 
@@ -487,10 +491,12 @@ uint32_t PRDC_AD7193::continuousReadAverageDelay(uint32_t sampleNumber, uint32_t
   #endif
   
   uint32_t samplesAverage = 0;  
-  uint32_t command = AD7193_MODE_SEL(AD7193_MODE_CONT) | 
+  uint32_t command = AD7193_MODE_SEL(AD7193_MODE_CONT) |
+                     _filter |
+                     _notch_filter |
                      AD7193_MODE_CLKSRC(_clock_mode) |
                      AD7193_MODE_RATE(_rate);
-            
+
   this->beginTransaction();
   this->setRegister(AD7193_REG_MODE, command, 3);
   for(uint32_t i = 0; i < sampleNumber; i++) {
@@ -498,7 +504,7 @@ uint32_t PRDC_AD7193::continuousReadAverageDelay(uint32_t sampleNumber, uint32_t
     samplesAverage += this->getRegister(AD7193_REG_DATA, 3);
   }
   this->endTransaction();
-  
+
   return samplesAverage/sampleNumber;
 }
 
@@ -510,10 +516,12 @@ void PRDC_AD7193::continuousRead(uint32_t sampleNumber, uint32_t *buffer) {
     Serial.println(F("readAverage()"));
   #endif
    
-  uint32_t command = AD7193_MODE_SEL(AD7193_MODE_CONT) | 
+  uint32_t command = AD7193_MODE_SEL(AD7193_MODE_CONT) |
+                     _filter |
+                     _notch_filter |
                      AD7193_MODE_CLKSRC(_clock_mode) |
                      AD7193_MODE_RATE(_rate);
-            
+
   this->beginTransaction();
   this->setRegister(AD7193_REG_MODE, command, 3);
   for(uint32_t i = 0; i < sampleNumber; i++) {

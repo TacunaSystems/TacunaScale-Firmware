@@ -45,6 +45,12 @@ Terminate each command with a newline (`\n`). Queries end with `?`.
 | `MEASure:WEIGht:RAW:CH1?` | Raw ADC counts, channel 1 | Int32 |
 | `MEASure:WEIGht:MAX?` | Peak weight recorded since last reset | Float |
 | `MEASure:WEIGht:MAX <val>` | Set/reset peak weight tracker (persists to EEPROM) | — |
+| `MEASure:WEIGht:AVERage:COUNt?` | Samples currently in running average buffer | Int |
+| `MEASure:WEIGht:AVERage:SIZE?` | Running average buffer size (compile-time constant) | Int |
+| `MEASure:WEIGht:SDEViation?` | Standard deviation of running average buffer | Float |
+| `MEASure:WEIGht:STABle?` | Stability flag (1 = settled, 0 = unstable). Settled when std dev < (threshold × capacity) AND buffer full | Bool (0/1) |
+| `MEASure:WEIGht:GROSS?` | Weight before tare subtraction, in current display unit | Float |
+| `MEASure:WEIGht:OVERload?` | Overload flag (1 = abs(weight) > capacity, 0 = OK) | Bool (0/1) |
 
 ## Configuration Commands
 
@@ -52,9 +58,19 @@ Terminate each command with a newline (`\n`). Queries end with `?`.
 |---------|-------------|-----------|
 | `CONFigure:UNIT <KG\|LB>` | Set display unit | `KG` or `LB` |
 | `CONFigure:UNIT?` | Query current display unit | — |
-| `CONFigure:TARE` | Tare — subtract current weight from future readings | — |
+| `CONFigure:TARE [<value>]` | Tare — no param: auto-tare from current reading. With param: set tare offset directly (in cal units) | Float (optional) |
 | `CONFigure:TARE?` | Query current tare offset | — |
 | `CONFigure:ZERO` | Set current ADC reading as zero reference (persists to EEPROM) | — |
+| `CONFigure:ADC:RATE <1-1023>` | Set AD7193 filter output rate (runtime only) | Int |
+| `CONFigure:ADC:RATE?` | Query current ADC rate setting | — |
+| `CONFigure:ADC:FILTer <SINC3\|SINC4>` | Set digital filter type (runtime only) | `SINC3` or `SINC4` |
+| `CONFigure:ADC:FILTer?` | Query current filter type | — |
+| `CONFigure:ADC:NOTCh <ON\|OFF>` | Enable/disable 50/60 Hz notch rejection (runtime only) | Boolean |
+| `CONFigure:ADC:NOTCh?` | Query notch filter state | — |
+| `CONFigure:STABility:THReshold <val>` | Stability threshold as fraction of overload capacity (persists to EEPROM, default 0.0002 = 0.02%) | Float (> 0) |
+| `CONFigure:STABility:THReshold?` | Query current stability threshold | — |
+| `CONFigure:OVERload:CAPacity <val>` | Overload capacity for `MEAS:WEIG:OVER?` in display units (persists to EEPROM, default 500) | Float (> 0) |
+| `CONFigure:OVERload:CAPacity?` | Query current overload capacity | — |
 
 ## Calibration Commands
 
@@ -70,6 +86,8 @@ All set commands persist immediately to EEPROM.
 | `CALibration:WEIGht <val>` | Set calibration weight | UInt32 |
 | `CALibration:UNIT?` | Query calibration unit | — |
 | `CALibration:UNIT <KG\|LB>` | Set calibration unit | `KG` or `LB` |
+| `CALibration:ZERO:EXEC` | Block until settled (~2.5s), capture zero reference, persist | — |
+| `CALibration:SPAN:EXEC` | Block until settled (~2.5s), auto-compute calValue, persist | — |
 
 ## System Commands
 
@@ -86,6 +104,11 @@ All set commands persist immediately to EEPROM.
 | `SYSTem:ECHO?` | Query echo state | — |
 | `SYSTem:PROMpt <ON\|OFF>` | Enable/disable prompt after responses (persists to EEPROM) | Boolean |
 | `SYSTem:PROMpt?` | Query prompt state | — |
+| `SYSTem:POWer:GOOD:VDD?` | 3.3V rail power good signal | Bool (0/1) |
+| `SYSTem:POWer:GOOD:V5A?` | 5V rail power good signal | Bool (0/1) |
+| `SYSTem:CONFig:SW1?` | DIP switch 1 state (read at boot) | Bool (0/1) |
+| `SYSTem:CONFig:SW2?` | DIP switch 2 state (read at boot) | Bool (0/1) |
+| `SYSTem:FW?` | Firmware version string | String |
 | `SYSTem:EEPROM?` | Dump all EEPROM values (comma-separated key=value pairs) | — |
 | `SYSTem:EEPROM:COMMit` | Flush pending EEPROM writes to flash | — |
 
@@ -114,8 +137,8 @@ reads all fields directly from flash.
 
 | Address | Field | Type | Persisted by |
 |---------|-------|------|-------------|
-| 0 | calValue | float | `CAL:VAL`, calibration routine |
-| 4 | zeroValue | int32_t | `CAL:ZERO`, `CONF:ZERO`, calibration routine |
+| 0 | calValue | float | `CAL:VAL`, `CAL:SPAN:EXEC`, calibration routine |
+| 4 | zeroValue | int32_t | `CAL:ZERO`, `CAL:ZERO:EXEC`, `CAL:SPAN:EXEC`, `CONF:ZERO`, calibration routine |
 | 8 | backlightEnable | enum (int) | Power-down |
 | 12 | unitVal | enum (int) | Power-down |
 | 16 | calWeight | uint32_t | `CAL:WEIG`, calibration routine |
@@ -124,6 +147,8 @@ reads all fields directly from flash.
 | 28 | backlightPWM | uint8_t | `SYST:BACK:PWM`, power-down |
 | 29 | echo | uint8_t | `SYST:ECHO`, power-down |
 | 30 | prompt | uint8_t | `SYST:PROM`, power-down |
+| 31 | stabThreshold | float | `CONF:STAB:THR`, power-down |
+| 35 | overloadCapacity | float | `CONF:OVER:CAP`, power-down |
 
 ## Examples
 
@@ -144,7 +169,7 @@ CONF:UNIT LB
 
 # Read all EEPROM values
 SYST:EEPROM?
-→ calValue=7168.220215,zeroValue=8295856,backlight=1,unit=KG,calWeight=100,calUnit=KG,weightMax=25.4321,backlightPWM=31,echo=1,prompt=1
+→ calValue=7168.220215,zeroValue=8295856,backlight=1,unit=KG,calWeight=100,calUnit=KG,weightMax=25.4321,backlightPWM=31,echo=1,prompt=1,stabThresh=0.0002,overCap=500.0000
 
 # Reset peak weight
 MEAS:WEIG:MAX 0
@@ -152,4 +177,56 @@ MEAS:WEIG:MAX 0
 # Check for errors
 SYST:ERR?
 → 0,"No error"
+
+# Remote calibration workflow
+CAL:UNIT KG
+CAL:WEIG 100
+# (unload scale)
+CAL:ZERO:EXEC
+→ (blocks ~2.5s, captures zero)
+# (load 100 kg reference weight)
+CAL:SPAN:EXEC
+→ (blocks ~2.5s, computes calValue)
+MEAS:WEIG?
+→ 100.0000
+
+# ADC tuning
+CONF:ADC:RATE 300
+CONF:ADC:RATE?
+→ 300
+CONF:ADC:FILT SINC3
+CONF:ADC:FILT?
+→ SINC3
+
+# Stability detection (ESP32-to-ESP32 integration)
+# Threshold is a fraction of overload capacity (default 0.0002 = 0.02%)
+# With 500 lb capacity: stable when sdev < 0.0002 * 500 = 0.1 lb
+MEAS:WEIG:SDEV?
+→ 0.0234
+MEAS:WEIG:STAB?
+→ 1
+CONF:STAB:THR 0.00001
+MEAS:WEIG:STAB?
+→ 0
+
+# Gross weight (before tare)
+CONF:TARE
+MEAS:WEIG?
+→ 0.0000
+MEAS:WEIG:GROSS?
+→ 25.4321
+
+# Direct tare set/clear
+CONF:TARE 10.5
+CONF:TARE?
+→ 10.500000
+CONF:TARE 0
+
+# Overload detection
+MEAS:WEIG:OVER?
+→ 0
+CONF:OVER:CAP 0.001
+MEAS:WEIG:OVER?
+→ 1
+CONF:OVER:CAP 500
 ```

@@ -31,8 +31,23 @@ enum e_unitVal {kg = 0, lb = 1};
 #define EEPROM_ADDR_BACKLIGHT_PWM (EEPROM_ADDR_WEIGHT_MAX + (int)sizeof(float))
 #define EEPROM_ADDR_ECHO          (EEPROM_ADDR_BACKLIGHT_PWM + (int)sizeof(uint8_t))
 #define EEPROM_ADDR_PROMPT        (EEPROM_ADDR_ECHO          + (int)sizeof(uint8_t))
-#define EEPROM_ADDR_END           (EEPROM_ADDR_PROMPT        + (int)sizeof(uint8_t))
+#define EEPROM_ADDR_STAB_THRESH   (EEPROM_ADDR_PROMPT        + (int)sizeof(uint8_t))
+#define EEPROM_ADDR_OVER_CAP      (EEPROM_ADDR_STAB_THRESH   + (int)sizeof(float))
+#define EEPROM_ADDR_END           (EEPROM_ADDR_OVER_CAP      + (int)sizeof(float))
 #define EEPROM_SIZE_BYTES         EEPROM_ADDR_END
+
+// Power good pins (shared — read by SCPI handlers)
+#define V3V3_PG 18
+#define V5_A_PG 35
+
+// Scale capacity
+#define SCALE_CAP 500  // full-scale capacity in SCALE_CAP_UNIT
+
+// Stability detection defaults (percentage of overload capacity, 0.0 to 1.0)
+#define STAB_THRESH_DEFAULT  0.0002f  // 0.02% of capacity
+
+// Overload detection defaults
+#define OVER_CAP_DEFAULT     ((float)SCALE_CAP)
 
 // Debug logging — messages go to a RAM ring buffer readable via SYST:LOG?
 // Set SCPI_DEBUG to 0 to compile out all debug logging.
