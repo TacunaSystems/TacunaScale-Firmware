@@ -41,6 +41,7 @@ extern bool    adaptiveFilterEnable;
 extern float   adaptiveFilterPct;
 extern uint32_t adaptiveFilterTimeUs;
 extern bool    configSwitch1;
+extern bool    adcInvert;
 extern bool    configSwitch2;
 extern PRDC_AD7193 AD7193;
 
@@ -342,6 +343,22 @@ static scpi_result_t Conf_AdcNotch(scpi_t *context) {
 /* CONFigure:ADC:NOTCh? */
 static scpi_result_t Conf_AdcNotchQ(scpi_t *context) {
     SCPI_ResultBool(context, AD7193.getNotchFilter() == AD7193_MODE_REJ60);
+    return SCPI_RES_OK;
+}
+
+/* CONFigure:ADC:INVert <ON|OFF> — invert ADC polarity (persists) */
+static scpi_result_t Conf_AdcInvert(scpi_t *context) {
+    scpi_bool_t val;
+    if (!SCPI_ParamBool(context, &val, TRUE)) return SCPI_RES_ERR;
+    adcInvert = (bool) val;
+    EEPROM.put(EEPROM_ADDR_ADC_INVERT, (uint8_t) adcInvert);
+    EEPROM.commit();
+    return SCPI_RES_OK;
+}
+
+/* CONFigure:ADC:INVert? */
+static scpi_result_t Conf_AdcInvertQ(scpi_t *context) {
+    SCPI_ResultBool(context, adcInvert);
     return SCPI_RES_OK;
 }
 
@@ -749,6 +766,7 @@ static scpi_result_t Sys_EepromQ(scpi_t *context) {
     uint8_t          ee_adaptEn;   EEPROM.get(EEPROM_ADDR_ADAPT_ENABLE, ee_adaptEn);
     float            ee_adaptThr;  EEPROM.get(EEPROM_ADDR_ADAPT_THRESH, ee_adaptThr);
     uint32_t         ee_adaptTime; EEPROM.get(EEPROM_ADDR_ADAPT_TIME,   ee_adaptTime);
+    uint8_t          ee_adcInvert; EEPROM.get(EEPROM_ADDR_ADC_INVERT,  ee_adcInvert);
 
     const char *unit_name = NULL, *cal_unit_name = NULL;
     SCPI_ChoiceToName(unit_choices, (int32_t) ee_unit, &unit_name);
@@ -759,14 +777,15 @@ static scpi_result_t Sys_EepromQ(scpi_t *context) {
         "calValue=%.6f,zeroValue=%ld,backlight=%d,unit=%s,"
         "calWeight=%lu,calUnit=%s,weightMax=%.4f,backlightPWM=%u,"
         "echo=%u,prompt=%u,stabThresh=%.4f,overCap=%.4f,"
-        "adaptEn=%u,adaptThr=%.4f,adaptTimeUs=%lu",
+        "adaptEn=%u,adaptThr=%.4f,adaptTimeUs=%lu,adcInvert=%u",
         (double) ee_calValue, (long) ee_zeroValue, (int) ee_backlight,
         unit_name ? unit_name : "?",
         (unsigned long) ee_calWeight, cal_unit_name ? cal_unit_name : "?",
         (double) ee_weightMax, (unsigned) ee_backlightPWM,
         (unsigned) ee_echo, (unsigned) ee_prompt,
         (double) ee_stabThresh, (double) ee_overCap,
-        (unsigned) ee_adaptEn, (double) ee_adaptThr, (unsigned long) ee_adaptTime);
+        (unsigned) ee_adaptEn, (double) ee_adaptThr, (unsigned long) ee_adaptTime,
+        (unsigned) ee_adcInvert);
     SCPI_ResultCharacters(context, buf, strlen(buf));
     return SCPI_RES_OK;
 }
@@ -884,6 +903,8 @@ static const scpi_command_t scpi_commands[] = {
     { .pattern = "CONFigure:ADC:FILTer?",       .callback = Conf_AdcFilterQ, },
     { .pattern = "CONFigure:ADC:NOTCh",         .callback = Conf_AdcNotch, },
     { .pattern = "CONFigure:ADC:NOTCh?",        .callback = Conf_AdcNotchQ, },
+    { .pattern = "CONFigure:ADC:INVert",         .callback = Conf_AdcInvert, },
+    { .pattern = "CONFigure:ADC:INVert?",        .callback = Conf_AdcInvertQ, },
     { .pattern = "CONFigure:STABility:THReshold",  .callback = Conf_StabThresh, },
     { .pattern = "CONFigure:STABility:THReshold?", .callback = Conf_StabThreshQ, },
     { .pattern = "CONFigure:OVERload:CAPacity",    .callback = Conf_OverCap, },
