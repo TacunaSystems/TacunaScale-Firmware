@@ -49,8 +49,7 @@
 #define VIN_LVL 5       //  10k & 3.3k Vdiv => 1/0.248
 #define V5_A_LVL 6
 #define V5_A_EN 7
-#define V3V3_PG 18
-#define V5_A_PG 35
+// V3V3_PG and V5_A_PG defined in appconfig.h
 // Battery level macro definition
 #define BATV_TO_BAR(V) ((V) * 4.8f - 26.4f)
 
@@ -89,7 +88,7 @@ const float  PWR_5V_LVL_VDIV_SCLR = (1/0.5); // // Multiply ADC Volts by this sc
 #define LONG_PRESS_LOOP_DELAY 10 // 10ms 
 #define LONG_PRESS_COUNT_THRESHOLD 150 // multiples of LONG_PRESS_LOOP_DELAY (ex. for LONG_PRESS_DELAY = 10ms (100 counts = 1s)
 #define DEBOUNCE_TIME 50
-#define SCALE_CAP 500
+// SCALE_CAP defined in appconfig.h
 #define SCALE_CAP_UNIT lb
 #define MIN_CAL_VAL 25
 #define MAX_CAL_VAL 500
@@ -262,6 +261,10 @@ void setup() {
   // Enable 5V_A
   pinMode(V5_A_EN, OUTPUT);
   digitalWrite(V5_A_EN, HIGH);
+
+  // Power good inputs
+  pinMode(V3V3_PG, INPUT);
+  pinMode(V5_A_PG, INPUT);
 
   // Disable LCD backlight
   pinMode(LCD_BACKLIGHT, OUTPUT);

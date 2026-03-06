@@ -48,7 +48,7 @@ Terminate each command with a newline (`\n`). Queries end with `?`.
 | `MEASure:WEIGht:AVERage:COUNt?` | Samples currently in running average buffer | Int |
 | `MEASure:WEIGht:AVERage:SIZE?` | Running average buffer size (compile-time constant) | Int |
 | `MEASure:WEIGht:SDEViation?` | Standard deviation of running average buffer | Float |
-| `MEASure:WEIGht:STABle?` | Stability flag (1 = settled, 0 = unstable). Settled when std dev < threshold AND buffer full | Bool (0/1) |
+| `MEASure:WEIGht:STABle?` | Stability flag (1 = settled, 0 = unstable). Settled when std dev < (threshold × capacity) AND buffer full | Bool (0/1) |
 | `MEASure:WEIGht:GROSS?` | Weight before tare subtraction, in current display unit | Float |
 | `MEASure:WEIGht:OVERload?` | Overload flag (1 = abs(weight) > capacity, 0 = OK) | Bool (0/1) |
 
@@ -67,7 +67,7 @@ Terminate each command with a newline (`\n`). Queries end with `?`.
 | `CONFigure:ADC:FILTer?` | Query current filter type | — |
 | `CONFigure:ADC:NOTCh <ON\|OFF>` | Enable/disable 50/60 Hz notch rejection (runtime only) | Boolean |
 | `CONFigure:ADC:NOTCh?` | Query notch filter state | — |
-| `CONFigure:STABility:THReshold <val>` | Stability threshold for `MEAS:WEIG:STAB?` (persists to EEPROM, default 0.1) | Float (> 0) |
+| `CONFigure:STABility:THReshold <val>` | Stability threshold as fraction of overload capacity (persists to EEPROM, default 0.0002 = 0.02%) | Float (> 0) |
 | `CONFigure:STABility:THReshold?` | Query current stability threshold | — |
 | `CONFigure:OVERload:CAPacity <val>` | Overload capacity for `MEAS:WEIG:OVER?` in display units (persists to EEPROM, default 500) | Float (> 0) |
 | `CONFigure:OVERload:CAPacity?` | Query current overload capacity | — |
@@ -104,6 +104,11 @@ All set commands persist immediately to EEPROM.
 | `SYSTem:ECHO?` | Query echo state | — |
 | `SYSTem:PROMpt <ON\|OFF>` | Enable/disable prompt after responses (persists to EEPROM) | Boolean |
 | `SYSTem:PROMpt?` | Query prompt state | — |
+| `SYSTem:POWer:GOOD:VDD?` | 3.3V rail power good signal | Bool (0/1) |
+| `SYSTem:POWer:GOOD:V5A?` | 5V rail power good signal | Bool (0/1) |
+| `SYSTem:CONFig:SW1?` | DIP switch 1 state (read at boot) | Bool (0/1) |
+| `SYSTem:CONFig:SW2?` | DIP switch 2 state (read at boot) | Bool (0/1) |
+| `SYSTem:FW?` | Firmware version string | String |
 | `SYSTem:EEPROM?` | Dump all EEPROM values (comma-separated key=value pairs) | — |
 | `SYSTem:EEPROM:COMMit` | Flush pending EEPROM writes to flash | — |
 
@@ -164,7 +169,7 @@ CONF:UNIT LB
 
 # Read all EEPROM values
 SYST:EEPROM?
-→ calValue=7168.220215,zeroValue=8295856,backlight=1,unit=KG,calWeight=100,calUnit=KG,weightMax=25.4321,backlightPWM=31,echo=1,prompt=1,stabThresh=0.1000,overCap=500.0000
+→ calValue=7168.220215,zeroValue=8295856,backlight=1,unit=KG,calWeight=100,calUnit=KG,weightMax=25.4321,backlightPWM=31,echo=1,prompt=1,stabThresh=0.0002,overCap=500.0000
 
 # Reset peak weight
 MEAS:WEIG:MAX 0
@@ -194,11 +199,13 @@ CONF:ADC:FILT?
 → SINC3
 
 # Stability detection (ESP32-to-ESP32 integration)
+# Threshold is a fraction of overload capacity (default 0.0002 = 0.02%)
+# With 500 lb capacity: stable when sdev < 0.0002 * 500 = 0.1 lb
 MEAS:WEIG:SDEV?
 → 0.0234
 MEAS:WEIG:STAB?
 → 1
-CONF:STAB:THR 0.01
+CONF:STAB:THR 0.00001
 MEAS:WEIG:STAB?
 → 0
 

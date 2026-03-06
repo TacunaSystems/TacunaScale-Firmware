@@ -36,6 +36,8 @@ extern const String unitAbbr[];
 extern portMUX_TYPE measMux;
 extern float   stabThreshold;
 extern float   overloadCapacity;
+extern bool    configSwitch1;
+extern bool    configSwitch2;
 extern PRDC_AD7193 AD7193;
 
 /* ------------------------------------------------------------------ */
@@ -183,13 +185,13 @@ static scpi_result_t Meas_WeightSdevQ(scpi_t *context) {
     return SCPI_RES_OK;
 }
 
-/* MEASure:WEIGht:STABle? — 1 if settled (sdev < threshold AND buffer full), 0 otherwise */
+/* MEASure:WEIGht:STABle? — 1 if settled (sdev < threshold*capacity AND buffer full), 0 otherwise */
 static scpi_result_t Meas_WeightStableQ(scpi_t *context) {
     taskENTER_CRITICAL(&measMux);
     float sd   = extADCRunAV.getStandardDeviation();
     bool  full = extADCRunAV.bufferIsFull();
     taskEXIT_CRITICAL(&measMux);
-    SCPI_ResultBool(context, full && sd < stabThreshold);
+    SCPI_ResultBool(context, full && sd < (stabThreshold * overloadCapacity));
     return SCPI_RES_OK;
 }
 
@@ -617,6 +619,36 @@ static scpi_result_t Sys_VsuppQ(scpi_t *context) {
     return SCPI_RES_OK;
 }
 
+/* SYSTem:POWer:GOOD:VDD? — 3.3V power good */
+static scpi_result_t Sys_PG3V3Q(scpi_t *context) {
+    SCPI_ResultBool(context, digitalRead(V3V3_PG));
+    return SCPI_RES_OK;
+}
+
+/* SYSTem:POWer:GOOD:V5A? — 5V power good */
+static scpi_result_t Sys_PG5VQ(scpi_t *context) {
+    SCPI_ResultBool(context, digitalRead(V5_A_PG));
+    return SCPI_RES_OK;
+}
+
+/* SYSTem:CONFig:SW1? — DIP switch 1 state */
+static scpi_result_t Sys_ConfSw1Q(scpi_t *context) {
+    SCPI_ResultBool(context, configSwitch1);
+    return SCPI_RES_OK;
+}
+
+/* SYSTem:CONFig:SW2? — DIP switch 2 state */
+static scpi_result_t Sys_ConfSw2Q(scpi_t *context) {
+    SCPI_ResultBool(context, configSwitch2);
+    return SCPI_RES_OK;
+}
+
+/* SYSTem:FW? — firmware version string */
+static scpi_result_t Sys_FwQ(scpi_t *context) {
+    SCPI_ResultCharacters(context, FW_VER, strlen(FW_VER));
+    return SCPI_RES_OK;
+}
+
 /* Forward declarations for functions in PennerScale.cpp */
 extern void powerDown(void);
 extern void wakeFromIdleMode(void);
@@ -797,7 +829,12 @@ static const scpi_command_t scpi_commands[] = {
     { .pattern = "SYSTem:BACKlight:PWM?",         .callback = Sys_BacklightPWMQ, },
     { .pattern = "SYSTem:POWer:VOLTage:BATTery?", .callback = Sys_VbattQ, },
     { .pattern = "SYSTem:POWer:VOLTage:SUPPly?",  .callback = Sys_VsuppQ, },
+    { .pattern = "SYSTem:POWer:GOOD:VDD?",        .callback = Sys_PG3V3Q, },
+    { .pattern = "SYSTem:POWer:GOOD:V5A?",        .callback = Sys_PG5VQ, },
     { .pattern = "SYSTem:POWer:DOWN",              .callback = Sys_PowerDown, },
+    { .pattern = "SYSTem:CONFig:SW1?",             .callback = Sys_ConfSw1Q, },
+    { .pattern = "SYSTem:CONFig:SW2?",             .callback = Sys_ConfSw2Q, },
+    { .pattern = "SYSTem:FW?",                     .callback = Sys_FwQ, },
     { .pattern = "SYSTem:ECHO",                    .callback = Sys_Echo, },
     { .pattern = "SYSTem:ECHO?",                   .callback = Sys_EchoQ, },
     { .pattern = "SYSTem:PROMpt",                  .callback = Sys_Prompt, },
