@@ -36,6 +36,9 @@ extern const String unitAbbr[];
 extern portMUX_TYPE measMux;
 extern float   stabThreshold;
 extern float   overloadCapacity;
+extern bool    adaptiveFilterEnable;
+extern float   adaptiveFilterPct;
+extern uint32_t adaptiveFilterTimeUs;
 extern bool    configSwitch1;
 extern bool    configSwitch2;
 extern PRDC_AD7193 AD7193;
@@ -229,7 +232,12 @@ static scpi_result_t Conf_Unit(scpi_t *context) {
     if (!SCPI_ParamChoice(context, unit_choices, &val, TRUE)) {
         return SCPI_RES_ERR;
     }
-    unitVal = (e_unitVal) val;
+    e_unitVal newUnit = (e_unitVal) val;
+    if (newUnit != unitVal) {
+        if (newUnit == lb) overloadCapacity *= kgtolbScalar;
+        else               overloadCapacity /= kgtolbScalar;
+        unitVal = newUnit;
+    }
     return SCPI_RES_OK;
 }
 
@@ -364,6 +372,7 @@ static scpi_result_t Conf_OverCap(scpi_t *context) {
     }
     overloadCapacity = (float) val.content.value;
     EEPROM.put(EEPROM_ADDR_OVER_CAP, overloadCapacity);
+    EEPROM.put(EEPROM_ADDR_UNIT_VAL, unitVal);  // keep unit+capacity in sync
     EEPROM.commit();
     return SCPI_RES_OK;
 }
@@ -371,6 +380,64 @@ static scpi_result_t Conf_OverCap(scpi_t *context) {
 /* CONFigure:OVERload:CAPacity? */
 static scpi_result_t Conf_OverCapQ(scpi_t *context) {
     SCPI_ResultFloat(context, overloadCapacity);
+    return SCPI_RES_OK;
+}
+
+/* CONFigure:FILTer:ADAPtive <ON|OFF> — enable/disable adaptive filter (persists) */
+static scpi_result_t Conf_AdaptEnable(scpi_t *context) {
+    scpi_bool_t val;
+    if (!SCPI_ParamBool(context, &val, TRUE)) return SCPI_RES_ERR;
+    adaptiveFilterEnable = (bool) val;
+    EEPROM.put(EEPROM_ADDR_ADAPT_ENABLE, (uint8_t) adaptiveFilterEnable);
+    EEPROM.commit();
+    return SCPI_RES_OK;
+}
+
+/* CONFigure:FILTer:ADAPtive? */
+static scpi_result_t Conf_AdaptEnableQ(scpi_t *context) {
+    SCPI_ResultBool(context, adaptiveFilterEnable);
+    return SCPI_RES_OK;
+}
+
+/* CONFigure:FILTer:ADAPtive:THReshold <val> — threshold as % of capacity (persists) */
+static scpi_result_t Conf_AdaptThresh(scpi_t *context) {
+    scpi_number_t val;
+    if (!SCPI_ParamNumber(context, scpi_special_numbers_def, &val, TRUE)) {
+        return SCPI_RES_ERR;
+    }
+    if (val.content.value <= 0.0) {
+        SCPI_ErrorPush(context, SCPI_ERROR_ILLEGAL_PARAMETER_VALUE);
+        return SCPI_RES_ERR;
+    }
+    adaptiveFilterPct = (float) val.content.value;
+    EEPROM.put(EEPROM_ADDR_ADAPT_THRESH, adaptiveFilterPct);
+    EEPROM.commit();
+    return SCPI_RES_OK;
+}
+
+/* CONFigure:FILTer:ADAPtive:THReshold? */
+static scpi_result_t Conf_AdaptThreshQ(scpi_t *context) {
+    SCPI_ResultFloat(context, adaptiveFilterPct);
+    return SCPI_RES_OK;
+}
+
+/* CONFigure:FILTer:ADAPtive:TIME <val> — sustained deviation window in µs (persists) */
+static scpi_result_t Conf_AdaptTime(scpi_t *context) {
+    int32_t val;
+    if (!SCPI_ParamInt32(context, &val, TRUE)) return SCPI_RES_ERR;
+    if (val < 1 || val > 60000000) {
+        SCPI_ErrorPush(context, SCPI_ERROR_ILLEGAL_PARAMETER_VALUE);
+        return SCPI_RES_ERR;
+    }
+    adaptiveFilterTimeUs = (uint32_t) val;
+    EEPROM.put(EEPROM_ADDR_ADAPT_TIME, adaptiveFilterTimeUs);
+    EEPROM.commit();
+    return SCPI_RES_OK;
+}
+
+/* CONFigure:FILTer:ADAPtive:TIME? */
+static scpi_result_t Conf_AdaptTimeQ(scpi_t *context) {
+    SCPI_ResultInt32(context, (int32_t) adaptiveFilterTimeUs);
     return SCPI_RES_OK;
 }
 
@@ -672,22 +739,27 @@ static scpi_result_t Sys_EepromQ(scpi_t *context) {
     uint8_t          ee_prompt; EEPROM.get(EEPROM_ADDR_PROMPT,  ee_prompt);
     float            ee_stabThresh; EEPROM.get(EEPROM_ADDR_STAB_THRESH, ee_stabThresh);
     float            ee_overCap;    EEPROM.get(EEPROM_ADDR_OVER_CAP,    ee_overCap);
+    uint8_t          ee_adaptEn;   EEPROM.get(EEPROM_ADDR_ADAPT_ENABLE, ee_adaptEn);
+    float            ee_adaptThr;  EEPROM.get(EEPROM_ADDR_ADAPT_THRESH, ee_adaptThr);
+    uint32_t         ee_adaptTime; EEPROM.get(EEPROM_ADDR_ADAPT_TIME,   ee_adaptTime);
 
     const char *unit_name = NULL, *cal_unit_name = NULL;
     SCPI_ChoiceToName(unit_choices, (int32_t) ee_unit, &unit_name);
     SCPI_ChoiceToName(unit_choices, (int32_t) ee_calUnit, &cal_unit_name);
 
-    char buf[320];
+    char buf[384];
     snprintf(buf, sizeof(buf),
         "calValue=%.6f,zeroValue=%ld,backlight=%d,unit=%s,"
         "calWeight=%lu,calUnit=%s,weightMax=%.4f,backlightPWM=%u,"
-        "echo=%u,prompt=%u,stabThresh=%.4f,overCap=%.4f",
+        "echo=%u,prompt=%u,stabThresh=%.4f,overCap=%.4f,"
+        "adaptEn=%u,adaptThr=%.4f,adaptTimeUs=%lu",
         (double) ee_calValue, (long) ee_zeroValue, (int) ee_backlight,
         unit_name ? unit_name : "?",
         (unsigned long) ee_calWeight, cal_unit_name ? cal_unit_name : "?",
         (double) ee_weightMax, (unsigned) ee_backlightPWM,
         (unsigned) ee_echo, (unsigned) ee_prompt,
-        (double) ee_stabThresh, (double) ee_overCap);
+        (double) ee_stabThresh, (double) ee_overCap,
+        (unsigned) ee_adaptEn, (double) ee_adaptThr, (unsigned long) ee_adaptTime);
     SCPI_ResultCharacters(context, buf, strlen(buf));
     return SCPI_RES_OK;
 }
@@ -809,6 +881,12 @@ static const scpi_command_t scpi_commands[] = {
     { .pattern = "CONFigure:STABility:THReshold?", .callback = Conf_StabThreshQ, },
     { .pattern = "CONFigure:OVERload:CAPacity",    .callback = Conf_OverCap, },
     { .pattern = "CONFigure:OVERload:CAPacity?",   .callback = Conf_OverCapQ, },
+    { .pattern = "CONFigure:FILTer:ADAPtive",             .callback = Conf_AdaptEnable, },
+    { .pattern = "CONFigure:FILTer:ADAPtive?",            .callback = Conf_AdaptEnableQ, },
+    { .pattern = "CONFigure:FILTer:ADAPtive:THReshold",   .callback = Conf_AdaptThresh, },
+    { .pattern = "CONFigure:FILTer:ADAPtive:THReshold?",  .callback = Conf_AdaptThreshQ, },
+    { .pattern = "CONFigure:FILTer:ADAPtive:TIME",        .callback = Conf_AdaptTime, },
+    { .pattern = "CONFigure:FILTer:ADAPtive:TIME?",       .callback = Conf_AdaptTimeQ, },
 
     /* Calibration */
     { .pattern = "CALibration:VALue",   .callback = Cal_Value, },

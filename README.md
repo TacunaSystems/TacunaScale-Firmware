@@ -1,6 +1,6 @@
-# Penner Bathing Scale Firmware
+# TacunaScale Firmware
 
-ESP32-S3 firmware for the Penner Bathing Scale, built with [PlatformIO](https://platformio.org/).
+ESP32-S3 firmware for the TacunaScale, built with [PlatformIO](https://platformio.org/).
 
 ## Build Environment
 
@@ -87,7 +87,7 @@ The boot splash logo is selected at compile time via `SPLASH_LOGO` in `src/Penne
 #define SPLASH_LOGO_NONE   0  // No logo, FW version only
 #define SPLASH_LOGO_PENNER 1  // Penner logo
 #define SPLASH_LOGO_TACUNA 2  // Tacuna Systems logo
-#define SPLASH_LOGO SPLASH_LOGO_TACUNA  // Select active logo
+#define SPLASH_LOGO SPLASH_LOGO_TACUNA  // ← Active logo
 ```
 
 Logo data lives in separate headers under `include/` (`logo_penner.h`, `logo_tacuna.h`).

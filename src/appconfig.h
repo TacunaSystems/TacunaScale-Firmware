@@ -33,7 +33,10 @@ enum e_unitVal {kg = 0, lb = 1};
 #define EEPROM_ADDR_PROMPT        (EEPROM_ADDR_ECHO          + (int)sizeof(uint8_t))
 #define EEPROM_ADDR_STAB_THRESH   (EEPROM_ADDR_PROMPT        + (int)sizeof(uint8_t))
 #define EEPROM_ADDR_OVER_CAP      (EEPROM_ADDR_STAB_THRESH   + (int)sizeof(float))
-#define EEPROM_ADDR_END           (EEPROM_ADDR_OVER_CAP      + (int)sizeof(float))
+#define EEPROM_ADDR_ADAPT_ENABLE  (EEPROM_ADDR_OVER_CAP      + (int)sizeof(float))
+#define EEPROM_ADDR_ADAPT_THRESH  (EEPROM_ADDR_ADAPT_ENABLE  + (int)sizeof(uint8_t))
+#define EEPROM_ADDR_ADAPT_TIME    (EEPROM_ADDR_ADAPT_THRESH  + (int)sizeof(float))
+#define EEPROM_ADDR_END           (EEPROM_ADDR_ADAPT_TIME    + (int)sizeof(uint32_t))
 #define EEPROM_SIZE_BYTES         EEPROM_ADDR_END
 
 // Power good pins (shared — read by SCPI handlers)
@@ -48,6 +51,11 @@ enum e_unitVal {kg = 0, lb = 1};
 
 // Overload detection defaults
 #define OVER_CAP_DEFAULT     ((float)SCALE_CAP)
+
+// Adaptive filter defaults (direction-aware reset)
+#define ADAPT_FILTER_DEFAULT  true
+#define ADAPT_THRESH_DEFAULT  1.0f   // % of capacity — threshold for directional deviation
+#define ADAPT_TIME_DEFAULT    750000 // µs — sustained deviation window before reset
 
 // Debug logging — messages go to a RAM ring buffer readable via SYST:LOG?
 // Set SCPI_DEBUG to 0 to compile out all debug logging.
