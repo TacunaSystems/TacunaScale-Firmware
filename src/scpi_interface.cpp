@@ -5,6 +5,7 @@
 #include <Arduino.h>
 #include <EEPROM.h>
 #include <cstring>
+#include <cfloat>
 #include "appconfig.h"
 #include "scpi_interface.h"
 #include "RunningAverage.h"
@@ -234,8 +235,14 @@ static scpi_result_t Conf_Unit(scpi_t *context) {
     }
     e_unitVal newUnit = (e_unitVal) val;
     if (newUnit != unitVal) {
-        if (newUnit == lb) overloadCapacity *= kgtolbScalar;
-        else               overloadCapacity /= kgtolbScalar;
+        if (newUnit == lb) {
+            overloadCapacity *= kgtolbScalar;
+            extADCweightMax *= kgtolbScalar;
+        } else {
+            overloadCapacity /= kgtolbScalar;
+            extADCweightMax /= kgtolbScalar;
+        }
+        extADCRunAV.clear();
         unitVal = newUnit;
     }
     return SCPI_RES_OK;
@@ -344,7 +351,7 @@ static scpi_result_t Conf_StabThresh(scpi_t *context) {
     if (!SCPI_ParamNumber(context, scpi_special_numbers_def, &val, TRUE)) {
         return SCPI_RES_ERR;
     }
-    if (val.content.value <= 0.0) {
+    if (val.content.value <= 0.0 || val.content.value > 1.0) {
         SCPI_ErrorPush(context, SCPI_ERROR_ILLEGAL_PARAMETER_VALUE);
         return SCPI_RES_ERR;
     }
@@ -366,7 +373,7 @@ static scpi_result_t Conf_OverCap(scpi_t *context) {
     if (!SCPI_ParamNumber(context, scpi_special_numbers_def, &val, TRUE)) {
         return SCPI_RES_ERR;
     }
-    if (val.content.value <= 0.0) {
+    if (val.content.value <= 0.0 || val.content.value > (double)FLT_MAX) {
         SCPI_ErrorPush(context, SCPI_ERROR_ILLEGAL_PARAMETER_VALUE);
         return SCPI_RES_ERR;
     }
@@ -405,7 +412,7 @@ static scpi_result_t Conf_AdaptThresh(scpi_t *context) {
     if (!SCPI_ParamNumber(context, scpi_special_numbers_def, &val, TRUE)) {
         return SCPI_RES_ERR;
     }
-    if (val.content.value <= 0.0) {
+    if (val.content.value <= 0.0 || val.content.value > 100.0) {
         SCPI_ErrorPush(context, SCPI_ERROR_ILLEGAL_PARAMETER_VALUE);
         return SCPI_RES_ERR;
     }
@@ -457,7 +464,7 @@ static scpi_result_t Cal_Value(scpi_t *context) {
     if (!SCPI_ParamNumber(context, scpi_special_numbers_def, &val, TRUE)) {
         return SCPI_RES_ERR;
     }
-    if (val.content.value <= 0.0) {
+    if (val.content.value <= 0.0 || val.content.value > (double)FLT_MAX) {
         SCPI_ErrorPush(context, SCPI_ERROR_ILLEGAL_PARAMETER_VALUE);
         return SCPI_RES_ERR;
     }

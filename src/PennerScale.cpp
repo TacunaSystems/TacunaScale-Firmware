@@ -639,10 +639,13 @@ void TaskUI(void *pvParameters)
       if(unitVal == kg) {
         unitVal = lb;
         overloadCapacity *= kgtolbScalar;
+        extADCweightMax *= kgtolbScalar;
       } else if(unitVal == lb) {
         unitVal = kg;
         overloadCapacity /= kgtolbScalar;
+        extADCweightMax /= kgtolbScalar;
       }
+      extADCRunAV.clear();
     }
     else if (unitButtonFlag == long_press_flag)
     {
@@ -765,7 +768,7 @@ void TaskExtAnalogRead(void *pvParameters)
 
     // Update shared measurement data (synchronized with SCPI reads)
     taskENTER_CRITICAL(&measMux);
-    if (abs(extADCweight) > abs(extADCweightMax))
+    if (fabsf(extADCweight) > fabsf(extADCweightMax))
     {
       extADCweightMax = extADCweight;
     }
@@ -774,13 +777,14 @@ void TaskExtAnalogRead(void *pvParameters)
       float avg = extADCRunAV.getAverage();
       float thresh = overloadCapacity * adaptiveFilterPct / 100.0f;
       float delta = extADCweight - avg;
-      if (thresh > 0.0f && abs(delta) > thresh) {
+      uint32_t nowUs = micros();
+      if (thresh > 0.0f && fabsf(delta) > thresh) {
         bool above = (delta > 0.0f);
         if (!adaptiveTracking || above != adaptiveLastAbove) {
-          adaptiveStartUs = micros();
+          adaptiveStartUs = nowUs;
           adaptiveLastAbove = above;
           adaptiveTracking = true;
-        } else if ((micros() - adaptiveStartUs) >= adaptiveFilterTimeUs) {
+        } else if ((nowUs - adaptiveStartUs) >= adaptiveFilterTimeUs) {
           extADCRunAV.clear();
           adaptiveTracking = false;
         }
@@ -1432,7 +1436,7 @@ void powerDown(void)
 
   DBG_PRINTF("EEPROMextADCweightMax: %f\n", EEPROMextADCweightMax);
   DBG_PRINTF("extADCweightMax: %f\n", extADCweightMax);
-  if(abs(extADCweightMax) > abs(EEPROMextADCweightMax))
+  if(extADCweightMax != EEPROMextADCweightMax)
   {
     EEPROM.put(EEPROM_ADDR_WEIGHT_MAX, extADCweightMax);
     DBG_PRINTF("Updating extADCweightMax: %f", extADCweightMax);
