@@ -12,8 +12,8 @@
 #define SCPI_ERROR_QUEUE_SIZE     17
 
 // IDN fields: Manufacturer, Model, Serial, FW version
-#define SCPI_IDN1  "Penner"
-#define SCPI_IDN2  "BathingScale"
+#define SCPI_IDN1  "Tacuna Systems"
+#define SCPI_IDN2  "TacunaScale"
 #define SCPI_IDN3  "00000000"
 #define SCPI_IDN4  FW_VER
 

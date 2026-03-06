@@ -1,5 +1,5 @@
 # ============================================================================
-# Comprehensive SCPI Command Test Suite - Penner Bathing Scale
+# Comprehensive SCPI Command Test Suite - TacunaScale
 # ============================================================================
 # Tests all SCPI commands: queries, set/get roundtrips, error handling,
 # short-form vs long-form syntax, and echo/prompt behavior.
@@ -138,7 +138,7 @@ function Test-ErrorCase {
 # MAIN TEST EXECUTION
 # ============================================================================
 
-Write-Host "Penner Scale - SCPI Comprehensive Test Suite" -ForegroundColor White
+Write-Host "TacunaScale - SCPI Comprehensive Test Suite" -ForegroundColor White
 Write-Host "Port: $comPort @ $baudRate baud`n"
 
 $port = Open-Port
@@ -183,7 +183,7 @@ Write-Host "  calWeight=$savedCalWeight calUnit=$savedCalUnit bkl=$savedBackligh
 # --- Phase 1: IEEE 488.2 Common Commands ---
 Write-Section "Phase 1: IEEE 488.2 Common Commands"
 
-Test-Query -Port $port -Command "*IDN?" -Label "*IDN? identification" -ExpectedPattern "Penner,BathingScale,\d+,\d+\.\d+"
+Test-Query -Port $port -Command "*IDN?" -Label "*IDN? identification" -ExpectedPattern "Tacuna Systems,TacunaScale,\d+,\d+\.\d+"
 Test-Query -Port $port -Command "*TST?" -Label "*TST? self-test" -ExactMatch "0"
 Test-Query -Port $port -Command "*OPC?" -Label "*OPC? operation complete" -ExactMatch "1"
 Test-Query -Port $port -Command "*ESE?" -Label "*ESE? event status enable" -ExpectedPattern "^\d+$"
@@ -204,7 +204,7 @@ Send-SCPI -Port $port -Command "*CLS" -ExpectResponse $false | Out-Null
 Send-SCPI -Port $port -Command "*OPC" -ExpectResponse $false | Out-Null
 Send-SCPI -Port $port -Command "*WAI" -ExpectResponse $false | Out-Null
 $checkResp = Send-SCPI -Port $port -Command "*IDN?"
-if ($checkResp -match "Penner") {
+if ($checkResp -match "Tacuna") {
     Write-Pass "[$num] *CLS, *OPC, *WAI - no crash, scale responsive"
 } else {
     Write-Fail "[$num] *CLS, *OPC, *WAI - scale unresponsive after commands"
@@ -450,9 +450,9 @@ try {
         Start-Sleep -Milliseconds 50
     }
 } catch {}
-if ($echoResp -match "\*IDN\?" -and $echoResp -match "Penner") {
+if ($echoResp -match "\*IDN\?" -and $echoResp -match "Tacuna") {
     Write-Pass "[$num] ECHO ON - command echoed and response received"
-} elseif ($echoResp -match "Penner") {
+} elseif ($echoResp -match "Tacuna") {
     Write-Fail "[$num] ECHO ON - response received but command not echoed: '$echoResp'"
 } else {
     Write-Fail "[$num] ECHO ON - unexpected: '$echoResp'"
@@ -477,9 +477,9 @@ try {
         Start-Sleep -Milliseconds 50
     }
 } catch {}
-if ($promptResp -match "> .*Penner") {
+if ($promptResp -match "> .*Tacuna") {
     Write-Pass "[$num] PROMPT ON - response has '> ' prefix"
-} elseif ($promptResp -match "Penner") {
+} elseif ($promptResp -match "Tacuna") {
     Write-Fail "[$num] PROMPT ON - response received but no '> ' prefix: '$promptResp'"
 } else {
     Write-Fail "[$num] PROMPT ON - unexpected: '$promptResp'"

@@ -1,6 +1,6 @@
 # SCPI Command Reference
 
-Penner Bathing Scale — UART interface at 115200 baud, 8N1.
+TacunaScale — UART interface at 115200 baud, 8N1.
 
 Commands follow the SCPI-2 (Standard Commands for Programmable Instruments) protocol.
 Terminate each command with a newline (`\n`). Queries end with `?`.
@@ -13,7 +13,7 @@ Terminate each command with a newline (`\n`). Queries end with `?`.
 | `*ESE <val>` | Set event status enable register |
 | `*ESE?` | Query event status enable register |
 | `*ESR?` | Query event status register |
-| `*IDN?` | Query instrument identification (Penner,BathingScale,serial,fw_ver) |
+| `*IDN?` | Query instrument identification (Tacuna Systems,TacunaScale,serial,fw_ver) |
 | `*OPC` | Set operation complete bit when all pending operations finish |
 | `*OPC?` | Query operation complete (returns 1 when ready) |
 | `*RST` | Reset — clears tare and running average |
@@ -155,7 +155,7 @@ reads all fields directly from flash.
 ```
 # Identify the instrument
 *IDN?
-→ Penner,BathingScale,00000000,1.0.0
+→ Tacuna Systems,TacunaScale,00000000,1.0.0
 
 # Read weight
 MEAS:WEIG?

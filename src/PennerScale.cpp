@@ -1,4 +1,4 @@
-/* Penner Bathing Scale */
+/* Tacuna Scale */
 
 // Includes
 #include <Arduino.h>
@@ -23,7 +23,7 @@
 #define SPLASH_LOGO_NONE   0
 #define SPLASH_LOGO_PENNER 1
 #define SPLASH_LOGO_TACUNA 2
-#define SPLASH_LOGO SPLASH_LOGO_PENNER  // Select active logo
+#define SPLASH_LOGO SPLASH_LOGO_TACUNA  // Select active logo
 
 #if SPLASH_LOGO == SPLASH_LOGO_PENNER
 #include "logo_penner.h"
@@ -417,7 +417,7 @@ void setup() {
 
   delay(750); // Logo display and serial port ready delay
 
-  DBG_PRINTF("Penner Scale FW: %s\n\r", FW_VER);
+  DBG_PRINTF("TacunaScale FW: %s\n\r", FW_VER);
   DBG_PRINTF("Config Switch1: %d\n\r", configSwitch1);
   DBG_PRINTF("Config Switch2: %d\n\r", configSwitch2);
 
