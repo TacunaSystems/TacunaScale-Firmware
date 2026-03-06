@@ -350,7 +350,7 @@ static scpi_result_t Conf_StabThresh(scpi_t *context) {
     if (!SCPI_ParamNumber(context, scpi_special_numbers_def, &val, TRUE)) {
         return SCPI_RES_ERR;
     }
-    if (val.content.value <= 0.0) {
+    if (val.content.value <= 0.0 || val.content.value > 1.0) {
         SCPI_ErrorPush(context, SCPI_ERROR_ILLEGAL_PARAMETER_VALUE);
         return SCPI_RES_ERR;
     }
@@ -372,7 +372,7 @@ static scpi_result_t Conf_OverCap(scpi_t *context) {
     if (!SCPI_ParamNumber(context, scpi_special_numbers_def, &val, TRUE)) {
         return SCPI_RES_ERR;
     }
-    if (val.content.value <= 0.0) {
+    if (val.content.value <= 0.0 || !isfinite(val.content.value)) {
         SCPI_ErrorPush(context, SCPI_ERROR_ILLEGAL_PARAMETER_VALUE);
         return SCPI_RES_ERR;
     }
@@ -411,7 +411,7 @@ static scpi_result_t Conf_AdaptThresh(scpi_t *context) {
     if (!SCPI_ParamNumber(context, scpi_special_numbers_def, &val, TRUE)) {
         return SCPI_RES_ERR;
     }
-    if (val.content.value <= 0.0) {
+    if (val.content.value <= 0.0 || val.content.value > 100.0) {
         SCPI_ErrorPush(context, SCPI_ERROR_ILLEGAL_PARAMETER_VALUE);
         return SCPI_RES_ERR;
     }
@@ -463,7 +463,7 @@ static scpi_result_t Cal_Value(scpi_t *context) {
     if (!SCPI_ParamNumber(context, scpi_special_numbers_def, &val, TRUE)) {
         return SCPI_RES_ERR;
     }
-    if (val.content.value <= 0.0) {
+    if (val.content.value <= 0.0 || !isfinite(val.content.value)) {
         SCPI_ErrorPush(context, SCPI_ERROR_ILLEGAL_PARAMETER_VALUE);
         return SCPI_RES_ERR;
     }
