@@ -372,6 +372,7 @@ static scpi_result_t Conf_OverCap(scpi_t *context) {
     }
     overloadCapacity = (float) val.content.value;
     EEPROM.put(EEPROM_ADDR_OVER_CAP, overloadCapacity);
+    EEPROM.put(EEPROM_ADDR_UNIT_VAL, unitVal);  // keep unit+capacity in sync
     EEPROM.commit();
     return SCPI_RES_OK;
 }
