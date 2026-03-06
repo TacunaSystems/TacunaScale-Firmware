@@ -187,8 +187,10 @@ float tareValue = 0.0f; // default tare value
 uint32_t calWeight = MIN_CAL_VAL; // default calibration weight
 e_unitVal calUnit = DEFAULT_UNIT; // default calibration unit
 
-const float kgtolbScalar = 2.20462;
+extern const float kgtolbScalar = 2.20462;
 const String unitAbbr[] = {"kg", "lb"};
+float stabThreshold   = STAB_THRESH_DEFAULT;
+float overloadCapacity = OVER_CAP_DEFAULT;
 bool updateLCDWeight = true;
 volatile bool newWeightReady = false;
 bool noActivityPowerDownFlag = false;
@@ -358,6 +360,18 @@ void setup() {
     scpiPromptEnable = (bool) EEPROMprompt;
   } else { eepromDirty = true; }
 
+  float EEPROMstabThresh;
+  EEPROM.get(EEPROM_ADDR_STAB_THRESH, EEPROMstabThresh);
+  if (!isnan(EEPROMstabThresh) && EEPROMstabThresh > 0) {
+    stabThreshold = EEPROMstabThresh;
+  } else { eepromDirty = true; }
+
+  float EEPROMoverCap;
+  EEPROM.get(EEPROM_ADDR_OVER_CAP, EEPROMoverCap);
+  if (!isnan(EEPROMoverCap) && EEPROMoverCap > 0) {
+    overloadCapacity = EEPROMoverCap;
+  } else { eepromDirty = true; }
+
   // Write validated defaults back to EEPROM for any uninitialized fields
   if (eepromDirty) {
     EEPROM.put(EEPROM_ADDR_CAL_VALUE, calValue);
@@ -370,6 +384,8 @@ void setup() {
     EEPROM.put(EEPROM_ADDR_BACKLIGHT_PWM, backlightPWM);
     EEPROM.put(EEPROM_ADDR_ECHO, (uint8_t) scpiEchoEnable);
     EEPROM.put(EEPROM_ADDR_PROMPT, (uint8_t) scpiPromptEnable);
+    EEPROM.put(EEPROM_ADDR_STAB_THRESH, stabThreshold);
+    EEPROM.put(EEPROM_ADDR_OVER_CAP, overloadCapacity);
     EEPROM.commit();
     DBG_PRINTLN("EEPROM: initialized unset fields with defaults");
   }
@@ -1337,6 +1353,14 @@ void powerDown(void)
   uint8_t EEPROMprompt;
   EEPROM.get(EEPROM_ADDR_PROMPT, EEPROMprompt);
   if (EEPROMprompt != (uint8_t)scpiPromptEnable) EEPROM.put(EEPROM_ADDR_PROMPT, (uint8_t)scpiPromptEnable);
+
+  float EEPROMstabThresh;
+  EEPROM.get(EEPROM_ADDR_STAB_THRESH, EEPROMstabThresh);
+  if (EEPROMstabThresh != stabThreshold) EEPROM.put(EEPROM_ADDR_STAB_THRESH, stabThreshold);
+
+  float EEPROMoverCap;
+  EEPROM.get(EEPROM_ADDR_OVER_CAP, EEPROMoverCap);
+  if (EEPROMoverCap != overloadCapacity) EEPROM.put(EEPROM_ADDR_OVER_CAP, overloadCapacity);
 
   DBG_PRINTF("EEPROMextADCweightMax: %f\n", EEPROMextADCweightMax);
   DBG_PRINTF("extADCweightMax: %f\n", extADCweightMax);

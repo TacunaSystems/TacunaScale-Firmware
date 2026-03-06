@@ -34,6 +34,8 @@ extern volatile bool scpiPromptEnable;
 extern const float kgtolbScalar;
 extern const String unitAbbr[];
 extern portMUX_TYPE measMux;
+extern float   stabThreshold;
+extern float   overloadCapacity;
 extern PRDC_AD7193 AD7193;
 
 /* ------------------------------------------------------------------ */
@@ -172,6 +174,49 @@ static scpi_result_t Meas_WeightAvgSizeQ(scpi_t *context) {
     return SCPI_RES_OK;
 }
 
+/* MEASure:WEIGht:SDEViation? — running average standard deviation */
+static scpi_result_t Meas_WeightSdevQ(scpi_t *context) {
+    taskENTER_CRITICAL(&measMux);
+    float sd = extADCRunAV.getStandardDeviation();
+    taskEXIT_CRITICAL(&measMux);
+    SCPI_ResultFloat(context, sd);
+    return SCPI_RES_OK;
+}
+
+/* MEASure:WEIGht:STABle? — 1 if settled (sdev < threshold AND buffer full), 0 otherwise */
+static scpi_result_t Meas_WeightStableQ(scpi_t *context) {
+    taskENTER_CRITICAL(&measMux);
+    float sd   = extADCRunAV.getStandardDeviation();
+    bool  full = extADCRunAV.bufferIsFull();
+    taskEXIT_CRITICAL(&measMux);
+    SCPI_ResultBool(context, full && sd < stabThreshold);
+    return SCPI_RES_OK;
+}
+
+/* MEASure:WEIGht:GROSS? — weight before tare subtraction, in display units */
+static scpi_result_t Meas_WeightGrossQ(scpi_t *context) {
+    taskENTER_CRITICAL(&measMux);
+    float avg = extADCRunAV.getAverage();
+    taskEXIT_CRITICAL(&measMux);
+    /* avg is already in display units (after tare subtraction).
+       tareValue is in calUnit — convert to display units. */
+    float tareDisplay = tareValue;
+    if (calUnit == lb && unitVal == kg)       tareDisplay = tareValue / kgtolbScalar;
+    else if (calUnit == kg && unitVal == lb)  tareDisplay = tareValue * kgtolbScalar;
+    float gross = avg + tareDisplay;
+    SCPI_ResultFloat(context, gross);
+    return SCPI_RES_OK;
+}
+
+/* MEASure:WEIGht:OVERload? — 1 if abs(weight) > capacity, 0 otherwise */
+static scpi_result_t Meas_WeightOverloadQ(scpi_t *context) {
+    taskENTER_CRITICAL(&measMux);
+    float avg = extADCRunAV.getAverage();
+    taskEXIT_CRITICAL(&measMux);
+    SCPI_ResultBool(context, fabsf(avg) > overloadCapacity);
+    return SCPI_RES_OK;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Configuration commands                                            */
 /* ------------------------------------------------------------------ */
@@ -195,13 +240,20 @@ static scpi_result_t Conf_UnitQ(scpi_t *context) {
     return SCPI_RES_OK;
 }
 
-/* CONFigure:TARE — perform tare */
+/* CONFigure:TARE [<value>] — no param = auto-tare, with param = set tare directly */
 static scpi_result_t Conf_Tare(scpi_t *context) {
-    if (calValue == 0.0f) {
-        SCPI_ErrorPush(context, SCPI_ERROR_EXECUTION_ERROR);
-        return SCPI_RES_ERR;
+    scpi_number_t val;
+    if (SCPI_ParamNumber(context, scpi_special_numbers_def, &val, FALSE)) {
+        /* Explicit tare value provided */
+        tareValue = (float) val.content.value;
+    } else {
+        /* No parameter — auto-tare from current reading */
+        if (calValue == 0.0f) {
+            SCPI_ErrorPush(context, SCPI_ERROR_EXECUTION_ERROR);
+            return SCPI_RES_ERR;
+        }
+        tareValue = (extADCResult - zeroValue) / calValue;
     }
-    tareValue = (extADCResult - zeroValue) / calValue;
     extADCRunAV.clear();
     return SCPI_RES_OK;
 }
@@ -273,6 +325,50 @@ static scpi_result_t Conf_AdcNotch(scpi_t *context) {
 /* CONFigure:ADC:NOTCh? */
 static scpi_result_t Conf_AdcNotchQ(scpi_t *context) {
     SCPI_ResultBool(context, AD7193.getNotchFilter() == AD7193_MODE_REJ60);
+    return SCPI_RES_OK;
+}
+
+/* CONFigure:STABility:THReshold <val> — set stability threshold (persists) */
+static scpi_result_t Conf_StabThresh(scpi_t *context) {
+    scpi_number_t val;
+    if (!SCPI_ParamNumber(context, scpi_special_numbers_def, &val, TRUE)) {
+        return SCPI_RES_ERR;
+    }
+    if (val.content.value <= 0.0) {
+        SCPI_ErrorPush(context, SCPI_ERROR_ILLEGAL_PARAMETER_VALUE);
+        return SCPI_RES_ERR;
+    }
+    stabThreshold = (float) val.content.value;
+    EEPROM.put(EEPROM_ADDR_STAB_THRESH, stabThreshold);
+    EEPROM.commit();
+    return SCPI_RES_OK;
+}
+
+/* CONFigure:STABility:THReshold? */
+static scpi_result_t Conf_StabThreshQ(scpi_t *context) {
+    SCPI_ResultFloat(context, stabThreshold);
+    return SCPI_RES_OK;
+}
+
+/* CONFigure:OVERload:CAPacity <val> — set overload capacity (persists) */
+static scpi_result_t Conf_OverCap(scpi_t *context) {
+    scpi_number_t val;
+    if (!SCPI_ParamNumber(context, scpi_special_numbers_def, &val, TRUE)) {
+        return SCPI_RES_ERR;
+    }
+    if (val.content.value <= 0.0) {
+        SCPI_ErrorPush(context, SCPI_ERROR_ILLEGAL_PARAMETER_VALUE);
+        return SCPI_RES_ERR;
+    }
+    overloadCapacity = (float) val.content.value;
+    EEPROM.put(EEPROM_ADDR_OVER_CAP, overloadCapacity);
+    EEPROM.commit();
+    return SCPI_RES_OK;
+}
+
+/* CONFigure:OVERload:CAPacity? */
+static scpi_result_t Conf_OverCapQ(scpi_t *context) {
+    SCPI_ResultFloat(context, overloadCapacity);
     return SCPI_RES_OK;
 }
 
@@ -542,21 +638,24 @@ static scpi_result_t Sys_EepromQ(scpi_t *context) {
     uint8_t          ee_backlightPWM; EEPROM.get(EEPROM_ADDR_BACKLIGHT_PWM, ee_backlightPWM);
     uint8_t          ee_echo;   EEPROM.get(EEPROM_ADDR_ECHO,   ee_echo);
     uint8_t          ee_prompt; EEPROM.get(EEPROM_ADDR_PROMPT,  ee_prompt);
+    float            ee_stabThresh; EEPROM.get(EEPROM_ADDR_STAB_THRESH, ee_stabThresh);
+    float            ee_overCap;    EEPROM.get(EEPROM_ADDR_OVER_CAP,    ee_overCap);
 
     const char *unit_name = NULL, *cal_unit_name = NULL;
     SCPI_ChoiceToName(unit_choices, (int32_t) ee_unit, &unit_name);
     SCPI_ChoiceToName(unit_choices, (int32_t) ee_calUnit, &cal_unit_name);
 
-    char buf[256];
+    char buf[320];
     snprintf(buf, sizeof(buf),
         "calValue=%.6f,zeroValue=%ld,backlight=%d,unit=%s,"
         "calWeight=%lu,calUnit=%s,weightMax=%.4f,backlightPWM=%u,"
-        "echo=%u,prompt=%u",
+        "echo=%u,prompt=%u,stabThresh=%.4f,overCap=%.4f",
         (double) ee_calValue, (long) ee_zeroValue, (int) ee_backlight,
         unit_name ? unit_name : "?",
         (unsigned long) ee_calWeight, cal_unit_name ? cal_unit_name : "?",
         (double) ee_weightMax, (unsigned) ee_backlightPWM,
-        (unsigned) ee_echo, (unsigned) ee_prompt);
+        (unsigned) ee_echo, (unsigned) ee_prompt,
+        (double) ee_stabThresh, (double) ee_overCap);
     SCPI_ResultCharacters(context, buf, strlen(buf));
     return SCPI_RES_OK;
 }
@@ -657,6 +756,10 @@ static const scpi_command_t scpi_commands[] = {
     { .pattern = "MEASure:WEIGht:MAX?",       .callback = Meas_WeightMaxQ, },
     { .pattern = "MEASure:WEIGht:AVERage:COUNt?", .callback = Meas_WeightAvgCountQ, },
     { .pattern = "MEASure:WEIGht:AVERage:SIZE?",  .callback = Meas_WeightAvgSizeQ, },
+    { .pattern = "MEASure:WEIGht:SDEViation?",    .callback = Meas_WeightSdevQ, },
+    { .pattern = "MEASure:WEIGht:STABle?",        .callback = Meas_WeightStableQ, },
+    { .pattern = "MEASure:WEIGht:GROSS?",         .callback = Meas_WeightGrossQ, },
+    { .pattern = "MEASure:WEIGht:OVERload?",      .callback = Meas_WeightOverloadQ, },
 
     /* Configuration */
     { .pattern = "CONFigure:UNIT",   .callback = Conf_Unit, },
@@ -670,6 +773,10 @@ static const scpi_command_t scpi_commands[] = {
     { .pattern = "CONFigure:ADC:FILTer?",       .callback = Conf_AdcFilterQ, },
     { .pattern = "CONFigure:ADC:NOTCh",         .callback = Conf_AdcNotch, },
     { .pattern = "CONFigure:ADC:NOTCh?",        .callback = Conf_AdcNotchQ, },
+    { .pattern = "CONFigure:STABility:THReshold",  .callback = Conf_StabThresh, },
+    { .pattern = "CONFigure:STABility:THReshold?", .callback = Conf_StabThreshQ, },
+    { .pattern = "CONFigure:OVERload:CAPacity",    .callback = Conf_OverCap, },
+    { .pattern = "CONFigure:OVERload:CAPacity?",   .callback = Conf_OverCapQ, },
 
     /* Calibration */
     { .pattern = "CALibration:VALue",   .callback = Cal_Value, },

@@ -47,6 +47,10 @@ Terminate each command with a newline (`\n`). Queries end with `?`.
 | `MEASure:WEIGht:MAX <val>` | Set/reset peak weight tracker (persists to EEPROM) | — |
 | `MEASure:WEIGht:AVERage:COUNt?` | Samples currently in running average buffer | Int |
 | `MEASure:WEIGht:AVERage:SIZE?` | Running average buffer size (compile-time constant) | Int |
+| `MEASure:WEIGht:SDEViation?` | Standard deviation of running average buffer | Float |
+| `MEASure:WEIGht:STABle?` | Stability flag (1 = settled, 0 = unstable). Settled when std dev < threshold AND buffer full | Bool (0/1) |
+| `MEASure:WEIGht:GROSS?` | Weight before tare subtraction, in current display unit | Float |
+| `MEASure:WEIGht:OVERload?` | Overload flag (1 = abs(weight) > capacity, 0 = OK) | Bool (0/1) |
 
 ## Configuration Commands
 
@@ -54,7 +58,7 @@ Terminate each command with a newline (`\n`). Queries end with `?`.
 |---------|-------------|-----------|
 | `CONFigure:UNIT <KG\|LB>` | Set display unit | `KG` or `LB` |
 | `CONFigure:UNIT?` | Query current display unit | — |
-| `CONFigure:TARE` | Tare — subtract current weight from future readings | — |
+| `CONFigure:TARE [<value>]` | Tare — no param: auto-tare from current reading. With param: set tare offset directly (in cal units) | Float (optional) |
 | `CONFigure:TARE?` | Query current tare offset | — |
 | `CONFigure:ZERO` | Set current ADC reading as zero reference (persists to EEPROM) | — |
 | `CONFigure:ADC:RATE <1-1023>` | Set AD7193 filter output rate (runtime only) | Int |
@@ -63,6 +67,10 @@ Terminate each command with a newline (`\n`). Queries end with `?`.
 | `CONFigure:ADC:FILTer?` | Query current filter type | — |
 | `CONFigure:ADC:NOTCh <ON\|OFF>` | Enable/disable 50/60 Hz notch rejection (runtime only) | Boolean |
 | `CONFigure:ADC:NOTCh?` | Query notch filter state | — |
+| `CONFigure:STABility:THReshold <val>` | Stability threshold for `MEAS:WEIG:STAB?` (persists to EEPROM, default 0.1) | Float (> 0) |
+| `CONFigure:STABility:THReshold?` | Query current stability threshold | — |
+| `CONFigure:OVERload:CAPacity <val>` | Overload capacity for `MEAS:WEIG:OVER?` in display units (persists to EEPROM, default 500) | Float (> 0) |
+| `CONFigure:OVERload:CAPacity?` | Query current overload capacity | — |
 
 ## Calibration Commands
 
@@ -134,6 +142,8 @@ reads all fields directly from flash.
 | 28 | backlightPWM | uint8_t | `SYST:BACK:PWM`, power-down |
 | 29 | echo | uint8_t | `SYST:ECHO`, power-down |
 | 30 | prompt | uint8_t | `SYST:PROM`, power-down |
+| 31 | stabThreshold | float | `CONF:STAB:THR`, power-down |
+| 35 | overloadCapacity | float | `CONF:OVER:CAP`, power-down |
 
 ## Examples
 
@@ -154,7 +164,7 @@ CONF:UNIT LB
 
 # Read all EEPROM values
 SYST:EEPROM?
-→ calValue=7168.220215,zeroValue=8295856,backlight=1,unit=KG,calWeight=100,calUnit=KG,weightMax=25.4321,backlightPWM=31,echo=1,prompt=1
+→ calValue=7168.220215,zeroValue=8295856,backlight=1,unit=KG,calWeight=100,calUnit=KG,weightMax=25.4321,backlightPWM=31,echo=1,prompt=1,stabThresh=0.1000,overCap=500.0000
 
 # Reset peak weight
 MEAS:WEIG:MAX 0
@@ -182,4 +192,34 @@ CONF:ADC:RATE?
 CONF:ADC:FILT SINC3
 CONF:ADC:FILT?
 → SINC3
+
+# Stability detection (ESP32-to-ESP32 integration)
+MEAS:WEIG:SDEV?
+→ 0.0234
+MEAS:WEIG:STAB?
+→ 1
+CONF:STAB:THR 0.01
+MEAS:WEIG:STAB?
+→ 0
+
+# Gross weight (before tare)
+CONF:TARE
+MEAS:WEIG?
+→ 0.0000
+MEAS:WEIG:GROSS?
+→ 25.4321
+
+# Direct tare set/clear
+CONF:TARE 10.5
+CONF:TARE?
+→ 10.500000
+CONF:TARE 0
+
+# Overload detection
+MEAS:WEIG:OVER?
+→ 0
+CONF:OVER:CAP 0.001
+MEAS:WEIG:OVER?
+→ 1
+CONF:OVER:CAP 500
 ```
