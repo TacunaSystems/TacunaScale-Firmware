@@ -636,8 +636,13 @@ void TaskUI(void *pvParameters)
       // Change units
       DBG_PRINTF("Change unit flag set.\n");
       unitButtonFlag = no_press_flag;
-      if(unitVal == kg) unitVal = lb;
-      else if(unitVal == lb) unitVal = kg;  
+      if(unitVal == kg) {
+        unitVal = lb;
+        overloadCapacity *= kgtolbScalar;
+      } else if(unitVal == lb) {
+        unitVal = kg;
+        overloadCapacity /= kgtolbScalar;
+      }
     }
     else if (unitButtonFlag == long_press_flag)
     {

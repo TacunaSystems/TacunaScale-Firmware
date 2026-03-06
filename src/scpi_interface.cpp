@@ -232,7 +232,12 @@ static scpi_result_t Conf_Unit(scpi_t *context) {
     if (!SCPI_ParamChoice(context, unit_choices, &val, TRUE)) {
         return SCPI_RES_ERR;
     }
-    unitVal = (e_unitVal) val;
+    e_unitVal newUnit = (e_unitVal) val;
+    if (newUnit != unitVal) {
+        if (newUnit == lb) overloadCapacity *= kgtolbScalar;
+        else               overloadCapacity /= kgtolbScalar;
+        unitVal = newUnit;
+    }
     return SCPI_RES_OK;
 }
 
