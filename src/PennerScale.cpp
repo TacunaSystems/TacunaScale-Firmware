@@ -1435,7 +1435,7 @@ void powerDown(void)
 
   DBG_PRINTF("EEPROMextADCweightMax: %f\n", EEPROMextADCweightMax);
   DBG_PRINTF("extADCweightMax: %f\n", extADCweightMax);
-  if(abs(extADCweightMax) > abs(EEPROMextADCweightMax))
+  if(extADCweightMax != EEPROMextADCweightMax)
   {
     EEPROM.put(EEPROM_ADDR_WEIGHT_MAX, extADCweightMax);
     DBG_PRINTF("Updating extADCweightMax: %f", extADCweightMax);
