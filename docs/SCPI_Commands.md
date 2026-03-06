@@ -71,6 +71,12 @@ Terminate each command with a newline (`\n`). Queries end with `?`.
 | `CONFigure:STABility:THReshold?` | Query current stability threshold | — |
 | `CONFigure:OVERload:CAPacity <val>` | Overload capacity for `MEAS:WEIG:OVER?` in display units (persists to EEPROM, default 500) | Float (> 0) |
 | `CONFigure:OVERload:CAPacity?` | Query current overload capacity | — |
+| `CONFigure:FILTer:ADAPtive <ON\|OFF>` | Enable/disable adaptive filter (persists to EEPROM, default ON) | Boolean |
+| `CONFigure:FILTer:ADAPtive?` | Query adaptive filter state | — |
+| `CONFigure:FILTer:ADAPtive:THReshold <val>` | Deviation threshold as % of capacity (persists, default 1.0) | Float (> 0) |
+| `CONFigure:FILTer:ADAPtive:THReshold?` | Query adaptive filter threshold | — |
+| `CONFigure:FILTer:ADAPtive:TIME <val>` | Sustained deviation window in µs before reset (persists, default 750000) | Int (1-60000000) |
+| `CONFigure:FILTer:ADAPtive:TIME?` | Query adaptive filter time window | — |
 
 ## Calibration Commands
 
@@ -149,6 +155,25 @@ reads all fields directly from flash.
 | 30 | prompt | uint8_t | `SYST:PROM`, power-down |
 | 31 | stabThreshold | float | `CONF:STAB:THR`, power-down |
 | 35 | overloadCapacity | float | `CONF:OVER:CAP`, power-down |
+| 39 | adaptiveFilterEnable | uint8_t | `CONF:FILT:ADAP`, power-down |
+| 40 | adaptiveFilterPct | float | `CONF:FILT:ADAP:THR`, power-down |
+| 44 | adaptiveFilterTimeUs | uint32_t | `CONF:FILT:ADAP:TIME`, power-down |
+
+## Adaptive Filter
+
+The running average (default 5 samples at ~4 Hz) smooths noise but delays response
+to real weight changes by ~1.25 seconds. The **adaptive filter** detects sustained
+directional changes and resets the average for fast settle, while preserving
+averaging during oscillatory motion (e.g. a patient shifting on a chair scale).
+
+**Algorithm:** Each new reading is compared to the current average. If the deviation
+exceeds `threshold × capacity / 100` and persists in the same direction for longer
+than the configured time window, the running average buffer is cleared. Direction
+reversals (oscillation) restart the timer, so normal averaging continues undisturbed.
+The time-based window automatically scales with sample rate — no tuning needed when
+the ADC rate changes.
+
+**Defaults:** enabled, threshold 1.0% of capacity, time window 750000 µs (750 ms).
 
 ## Examples
 

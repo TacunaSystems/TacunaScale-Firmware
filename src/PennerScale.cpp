@@ -190,6 +190,9 @@ extern const float kgtolbScalar = 2.20462;
 const String unitAbbr[] = {"kg", "lb"};
 float stabThreshold   = STAB_THRESH_DEFAULT;
 float overloadCapacity = OVER_CAP_DEFAULT;
+bool adaptiveFilterEnable = ADAPT_FILTER_DEFAULT;
+float adaptiveFilterPct = ADAPT_THRESH_DEFAULT;
+uint32_t adaptiveFilterTimeUs = ADAPT_TIME_DEFAULT;
 bool updateLCDWeight = true;
 volatile bool newWeightReady = false;
 bool noActivityPowerDownFlag = false;
@@ -375,6 +378,24 @@ void setup() {
     overloadCapacity = EEPROMoverCap;
   } else { eepromDirty = true; }
 
+  uint8_t EEPROMadaptEnable;
+  EEPROM.get(EEPROM_ADDR_ADAPT_ENABLE, EEPROMadaptEnable);
+  if (EEPROMadaptEnable <= 1) {
+    adaptiveFilterEnable = (bool) EEPROMadaptEnable;
+  } else { eepromDirty = true; }
+
+  float EEPROMadaptThresh;
+  EEPROM.get(EEPROM_ADDR_ADAPT_THRESH, EEPROMadaptThresh);
+  if (!isnan(EEPROMadaptThresh) && EEPROMadaptThresh > 0) {
+    adaptiveFilterPct = EEPROMadaptThresh;
+  } else { eepromDirty = true; }
+
+  uint32_t EEPROMadaptTime;
+  EEPROM.get(EEPROM_ADDR_ADAPT_TIME, EEPROMadaptTime);
+  if (EEPROMadaptTime >= 1 && EEPROMadaptTime <= 60000000UL) {
+    adaptiveFilterTimeUs = EEPROMadaptTime;
+  } else { eepromDirty = true; }
+
   // Write validated defaults back to EEPROM for any uninitialized fields
   if (eepromDirty) {
     EEPROM.put(EEPROM_ADDR_CAL_VALUE, calValue);
@@ -389,6 +410,9 @@ void setup() {
     EEPROM.put(EEPROM_ADDR_PROMPT, (uint8_t) scpiPromptEnable);
     EEPROM.put(EEPROM_ADDR_STAB_THRESH, stabThreshold);
     EEPROM.put(EEPROM_ADDR_OVER_CAP, overloadCapacity);
+    EEPROM.put(EEPROM_ADDR_ADAPT_ENABLE, (uint8_t) adaptiveFilterEnable);
+    EEPROM.put(EEPROM_ADDR_ADAPT_THRESH, adaptiveFilterPct);
+    EEPROM.put(EEPROM_ADDR_ADAPT_TIME, adaptiveFilterTimeUs);
     EEPROM.commit();
     DBG_PRINTLN("EEPROM: initialized unset fields with defaults");
   }
@@ -700,6 +724,9 @@ void TaskExtAnalogRead(void *pvParameters)
   static float lastExtADCweight = 0;
   static float weightChangeLB = 0;
   static int32_t lastExtADCResultRaw = 0;
+  static uint32_t adaptiveStartUs = 0;   // Adaptive filter: timestamp of first deviation
+  static bool adaptiveLastAbove = false; // Adaptive filter: last deviation direction
+  static bool adaptiveTracking = false;  // Adaptive filter: currently tracking a deviation
   msAtLastIdleActivity = millis();  // Initialize idle timer
 
   xTaskDelayUntil(&xLastWakeTime, EXT_ANALOG_READ_TASK_DELAY/portTICK_PERIOD_MS);
@@ -736,6 +763,25 @@ void TaskExtAnalogRead(void *pvParameters)
     if (abs(extADCweight) > abs(extADCweightMax))
     {
       extADCweightMax = extADCweight;
+    }
+    // Adaptive filter: clear average on sustained directional change
+    if (adaptiveFilterEnable && extADCRunAV.getCount() > 0) {
+      float avg = extADCRunAV.getAverage();
+      float thresh = overloadCapacity * adaptiveFilterPct / 100.0f;
+      float delta = extADCweight - avg;
+      if (thresh > 0.0f && abs(delta) > thresh) {
+        bool above = (delta > 0.0f);
+        if (!adaptiveTracking || above != adaptiveLastAbove) {
+          adaptiveStartUs = micros();
+          adaptiveLastAbove = above;
+          adaptiveTracking = true;
+        } else if ((micros() - adaptiveStartUs) >= adaptiveFilterTimeUs) {
+          extADCRunAV.clear();
+          adaptiveTracking = false;
+        }
+      } else {
+        adaptiveTracking = false;
+      }
     }
     extADCRunAV.add(extADCweight);
     taskEXIT_CRITICAL(&measMux);
@@ -1364,6 +1410,18 @@ void powerDown(void)
   float EEPROMoverCap;
   EEPROM.get(EEPROM_ADDR_OVER_CAP, EEPROMoverCap);
   if (EEPROMoverCap != overloadCapacity) EEPROM.put(EEPROM_ADDR_OVER_CAP, overloadCapacity);
+
+  uint8_t EEPROMadaptEn;
+  EEPROM.get(EEPROM_ADDR_ADAPT_ENABLE, EEPROMadaptEn);
+  if (EEPROMadaptEn != (uint8_t)adaptiveFilterEnable) EEPROM.put(EEPROM_ADDR_ADAPT_ENABLE, (uint8_t)adaptiveFilterEnable);
+
+  float EEPROMadaptThr;
+  EEPROM.get(EEPROM_ADDR_ADAPT_THRESH, EEPROMadaptThr);
+  if (EEPROMadaptThr != adaptiveFilterPct) EEPROM.put(EEPROM_ADDR_ADAPT_THRESH, adaptiveFilterPct);
+
+  uint32_t EEPROMadaptTime;
+  EEPROM.get(EEPROM_ADDR_ADAPT_TIME, EEPROMadaptTime);
+  if (EEPROMadaptTime != adaptiveFilterTimeUs) EEPROM.put(EEPROM_ADDR_ADAPT_TIME, adaptiveFilterTimeUs);
 
   DBG_PRINTF("EEPROMextADCweightMax: %f\n", EEPROMextADCweightMax);
   DBG_PRINTF("extADCweightMax: %f\n", extADCweightMax);
