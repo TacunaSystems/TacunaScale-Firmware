@@ -346,11 +346,21 @@ static scpi_result_t Conf_AdcNotchQ(scpi_t *context) {
     return SCPI_RES_OK;
 }
 
-/* CONFigure:ADC:INVert <ON|OFF> — invert ADC polarity (persists) */
+/* CONFigure:ADC:INVert <ON|OFF> — invert ADC polarity (persists)
+   Toggling invalidates zeroValue/calValue — user must re-calibrate. */
 static scpi_result_t Conf_AdcInvert(scpi_t *context) {
     scpi_bool_t val;
     if (!SCPI_ParamBool(context, &val, TRUE)) return SCPI_RES_ERR;
-    adcInvert = (bool) val;
+    bool newInvert = (bool) val;
+    if (newInvert != adcInvert) {
+        adcInvert = newInvert;
+        /* Old-polarity data is now invalid */
+        taskENTER_CRITICAL(&measMux);
+        extADCRunAV.clear();
+        extADCweightMax = 0.0f;
+        taskEXIT_CRITICAL(&measMux);
+        tareValue = 0.0f;
+    }
     EEPROM.put(EEPROM_ADDR_ADC_INVERT, (uint8_t) adcInvert);
     EEPROM.commit();
     return SCPI_RES_OK;
