@@ -188,6 +188,9 @@ class PRDC_AD7193 {
     float rawToVolts(uint32_t, float);
 	void setBPDSW(bool);
     void printAllRegisters(void);
+    uint32_t getRate() const { return _rate; }
+    uint32_t getFilter() const { return _filter; }
+    uint32_t getNotchFilter() const { return _notch_filter; }
     
   private:
     SPISettings _spiSettings;

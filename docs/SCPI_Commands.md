@@ -45,6 +45,8 @@ Terminate each command with a newline (`\n`). Queries end with `?`.
 | `MEASure:WEIGht:RAW:CH1?` | Raw ADC counts, channel 1 | Int32 |
 | `MEASure:WEIGht:MAX?` | Peak weight recorded since last reset | Float |
 | `MEASure:WEIGht:MAX <val>` | Set/reset peak weight tracker (persists to EEPROM) | — |
+| `MEASure:WEIGht:AVERage:COUNt?` | Samples currently in running average buffer | Int |
+| `MEASure:WEIGht:AVERage:SIZE?` | Running average buffer size (compile-time constant) | Int |
 
 ## Configuration Commands
 
@@ -55,6 +57,12 @@ Terminate each command with a newline (`\n`). Queries end with `?`.
 | `CONFigure:TARE` | Tare — subtract current weight from future readings | — |
 | `CONFigure:TARE?` | Query current tare offset | — |
 | `CONFigure:ZERO` | Set current ADC reading as zero reference (persists to EEPROM) | — |
+| `CONFigure:ADC:RATE <1-1023>` | Set AD7193 filter output rate (runtime only) | Int |
+| `CONFigure:ADC:RATE?` | Query current ADC rate setting | — |
+| `CONFigure:ADC:FILTer <SINC3\|SINC4>` | Set digital filter type (runtime only) | `SINC3` or `SINC4` |
+| `CONFigure:ADC:FILTer?` | Query current filter type | — |
+| `CONFigure:ADC:NOTCh <ON\|OFF>` | Enable/disable 50/60 Hz notch rejection (runtime only) | Boolean |
+| `CONFigure:ADC:NOTCh?` | Query notch filter state | — |
 
 ## Calibration Commands
 
@@ -70,6 +78,8 @@ All set commands persist immediately to EEPROM.
 | `CALibration:WEIGht <val>` | Set calibration weight | UInt32 |
 | `CALibration:UNIT?` | Query calibration unit | — |
 | `CALibration:UNIT <KG\|LB>` | Set calibration unit | `KG` or `LB` |
+| `CALibration:ZERO:EXEC` | Block until settled (~2.5s), capture zero reference, persist | — |
+| `CALibration:SPAN:EXEC` | Block until settled (~2.5s), auto-compute calValue, persist | — |
 
 ## System Commands
 
@@ -114,8 +124,8 @@ reads all fields directly from flash.
 
 | Address | Field | Type | Persisted by |
 |---------|-------|------|-------------|
-| 0 | calValue | float | `CAL:VAL`, calibration routine |
-| 4 | zeroValue | int32_t | `CAL:ZERO`, `CONF:ZERO`, calibration routine |
+| 0 | calValue | float | `CAL:VAL`, `CAL:SPAN:EXEC`, calibration routine |
+| 4 | zeroValue | int32_t | `CAL:ZERO`, `CAL:ZERO:EXEC`, `CAL:SPAN:EXEC`, `CONF:ZERO`, calibration routine |
 | 8 | backlightEnable | enum (int) | Power-down |
 | 12 | unitVal | enum (int) | Power-down |
 | 16 | calWeight | uint32_t | `CAL:WEIG`, calibration routine |
@@ -152,4 +162,24 @@ MEAS:WEIG:MAX 0
 # Check for errors
 SYST:ERR?
 → 0,"No error"
+
+# Remote calibration workflow
+CAL:UNIT KG
+CAL:WEIG 100
+# (unload scale)
+CAL:ZERO:EXEC
+→ (blocks ~2.5s, captures zero)
+# (load 100 kg reference weight)
+CAL:SPAN:EXEC
+→ (blocks ~2.5s, computes calValue)
+MEAS:WEIG?
+→ 100.0000
+
+# ADC tuning
+CONF:ADC:RATE 300
+CONF:ADC:RATE?
+→ 300
+CONF:ADC:FILT SINC3
+CONF:ADC:FILT?
+→ SINC3
 ```
