@@ -353,19 +353,22 @@ static scpi_result_t Conf_AdcInvert(scpi_t *context) {
     scpi_bool_t val;
     if (!SCPI_ParamBool(context, &val, TRUE)) return SCPI_RES_ERR;
     bool newInvert = (bool) val;
+
+    taskENTER_CRITICAL(&measMux);
     if (newInvert != adcInvert) {
         adcInvert = newInvert;
         /* Negate zero reference and tare to match new ADC sign.
            calValue is a ratio of same-domain values — sign cancels. */
         zeroValue = -zeroValue;
         tareValue = -tareValue;
-        taskENTER_CRITICAL(&measMux);
         extADCRunAV.clear();
         extADCweightMax = -extADCweightMax;
-        taskEXIT_CRITICAL(&measMux);
     }
+    taskEXIT_CRITICAL(&measMux);
+
     EEPROM.put(EEPROM_ADDR_ADC_INVERT, (uint8_t) adcInvert);
     EEPROM.put(EEPROM_ADDR_ZERO_VALUE, zeroValue);
+    EEPROM.put(EEPROM_ADDR_WEIGHT_MAX, extADCweightMax);
     EEPROM.commit();
     return SCPI_RES_OK;
 }
