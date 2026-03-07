@@ -754,7 +754,7 @@ void TaskExtAnalogRead(void *pvParameters)
     // --- Ch0 read (mutex held only during SPI transaction) ---
     // AD7193 library manages its own beginTransaction/endTransaction internally
     xSemaphoreTake(SPImutex, portMAX_DELAY);
-    extADCResultCh0 = AD7193.singleConversion();
+    int32_t ch0 = AD7193.singleConversion();
     AD7193.channelSelect(AD7193_CH_1);
     xSemaphoreGive(SPImutex);
 
@@ -763,13 +763,16 @@ void TaskExtAnalogRead(void *pvParameters)
 
     // --- Ch1 read (mutex held only during SPI transaction) ---
     xSemaphoreTake(SPImutex, portMAX_DELAY);
-    extADCResultCh1 = AD7193.singleConversion();
+    int32_t ch1 = AD7193.singleConversion();
     AD7193.channelSelect(AD7193_CH_0);
     xSemaphoreGive(SPImutex);
 
-    // If DIP switch 1 is off (logic high), then scale is configured for single channel.  Otherwise use both channels.
-    if (adcInvert) { extADCResultCh0 = -extADCResultCh0; extADCResultCh1 = -extADCResultCh1; }
-    if(configSwitch1) extADCResult = extADCResultCh0; else extADCResult = extADCResultCh0 + extADCResultCh1;
+    // Apply polarity inversion to locals before writing globals
+    // (prevents SCPI queries from seeing un-negated values during the delay)
+    if (adcInvert) { ch0 = -ch0; ch1 = -ch1; }
+    extADCResultCh0 = ch0;
+    extADCResultCh1 = ch1;
+    if(configSwitch1) extADCResult = ch0; else extADCResult = ch0 + ch1;
     extADCweight = (calValue != 0.0f) ? (extADCResult - zeroValue)/calValue - tareValue : 0.0f;
     if(calUnit == lb && unitVal == kg) extADCweight = extADCweight / kgtolbScalar;
     else if(calUnit == kg && unitVal == lb) extADCweight = extADCweight * kgtolbScalar;
