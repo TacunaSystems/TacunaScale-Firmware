@@ -510,8 +510,8 @@ void setup() {
     AD7193.channelSelect(AD7193_CH_0);  // Set the ADC back to Ch0 to get ready for the ADC read task
 
     // If DIP switch 1 is off (logic high), then scale is configured for single channel.  Otherwise use both channels.
+    if (adcInvert) { extADCResultCh0 = -extADCResultCh0; extADCResultCh1 = -extADCResultCh1; }
     if(configSwitch1) extADCResult = extADCResultCh0; else extADCResult = extADCResultCh0 + extADCResultCh1;
-    if (adcInvert) extADCResult = -extADCResult;
 
     tareValue = (extADCResult - zeroValue)/calValue;
     DBG_PRINTF("Tare Value: %f\n", tareValue);
@@ -768,8 +768,8 @@ void TaskExtAnalogRead(void *pvParameters)
     xSemaphoreGive(SPImutex);
 
     // If DIP switch 1 is off (logic high), then scale is configured for single channel.  Otherwise use both channels.
+    if (adcInvert) { extADCResultCh0 = -extADCResultCh0; extADCResultCh1 = -extADCResultCh1; }
     if(configSwitch1) extADCResult = extADCResultCh0; else extADCResult = extADCResultCh0 + extADCResultCh1;
-    if (adcInvert) extADCResult = -extADCResult;
     extADCweight = (calValue != 0.0f) ? (extADCResult - zeroValue)/calValue - tareValue : 0.0f;
     if(calUnit == lb && unitVal == kg) extADCweight = extADCweight / kgtolbScalar;
     else if(calUnit == kg && unitVal == lb) extADCweight = extADCweight * kgtolbScalar;
