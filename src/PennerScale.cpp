@@ -98,14 +98,14 @@ const float  PWR_5V_LVL_VDIV_SCLR = (1/0.5); // // Multiply ADC Volts by this sc
 
 // LCD weight reading formatting constants
 #define WVAL_X_POS 128 // Reading is right-aligned to full display width (unit moved to line below)
-#define WVAL_Y_POS 40
+#define WVAL_Y_POS 43
 #define WVAL_DEC_PLS 1
 #define WVAL_PREC 1
-#define UNIT_Y_POS 56  // Unit on its own line below weight, right-justified
+#define UNIT_Y_POS 64  // Unit at bottom of display, right-justified
 #define DEC_PT_W_PX 5  // Actual width of the decimal point in px
 #define DEC_PT_S_PX 7  // Space generated between numbers to allow for decimal point in px (usually ~1.5x dec pt width)
 #define WVAL_FONT u8g2_font_inb21_mn
-#define UNIT_FONT u8g2_font_7x13B_mr
+#define UNIT_FONT u8g2_font_7x13B_mf  // Bold, full Unicode (includes middle dot ·)
 #define MSG_FONT u8g2_font_6x12_m_symbols
 #define FW_FONT u8g2_font_4x6_mr
 #define LCD_CONTRAST 60
@@ -189,7 +189,7 @@ e_unitVal calUnit = DEFAULT_UNIT; // default calibration unit
 extern const float kgtolbScalar = 2.20462;
 extern const float kgtoNScalar  = 9.80665;
 extern const float NmtolbftScalar = 0.737562;
-const char* const unitAbbr[] = {"kg", "lb", "N", "Nm", "lbft"};
+const char* const unitAbbr[] = {"kg", "lb", "N", "N\xb7m", "lb\xb7""ft"};
 float stabThreshold   = STAB_THRESH_DEFAULT;
 float overloadCapacity = OVER_CAP_DEFAULT;
 bool adaptiveFilterEnable = ADAPT_FILTER_DEFAULT;
