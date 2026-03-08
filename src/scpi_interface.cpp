@@ -35,7 +35,7 @@ extern volatile bool scpiPromptEnable;
 extern const float kgtolbScalar;
 extern const float kgtoNScalar;
 extern const float NmtolbftScalar;
-extern const String unitAbbr[];
+extern const char* const unitAbbr[];
 extern float unitConversionFactor(e_unitVal from, e_unitVal to);
 extern portMUX_TYPE measMux;
 extern float   stabThreshold;

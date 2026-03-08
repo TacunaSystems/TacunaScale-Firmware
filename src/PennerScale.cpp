@@ -189,7 +189,7 @@ e_unitVal calUnit = DEFAULT_UNIT; // default calibration unit
 extern const float kgtolbScalar = 2.20462;
 extern const float kgtoNScalar  = 9.80665;
 extern const float NmtolbftScalar = 0.737562;
-const String unitAbbr[] = {"kg", "lb", "N", "Nm", "lbft"};
+const char* const unitAbbr[] = {"kg", "lb", "N", "Nm", "lbft"};
 float stabThreshold   = STAB_THRESH_DEFAULT;
 float overloadCapacity = OVER_CAP_DEFAULT;
 bool adaptiveFilterEnable = ADAPT_FILTER_DEFAULT;
@@ -1089,7 +1089,7 @@ void UpdateWeightReadingLCD()
     u8g2.print(s_extADCweight.substring(s_extADCweight.length()-WVAL_DEC_PLS).c_str());
 
     u8g2.setFont(UNIT_FONT);
-    const char *uStr = unitAbbr[unitVal].c_str();
+    const char *uStr = unitAbbr[unitVal];
     u8g2.setCursor(u8g2.getDisplayWidth() - u8g2.getStrWidth(uStr), UNIT_Y_POS);
     u8g2.print(uStr);
 
@@ -1191,7 +1191,7 @@ void doCalibration()
       unitButtonFlag = no_press_flag;
       calUnit = (e_unitVal)((calUnit + 1) % UNIT_VAL_COUNT);
       u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
-      u8g2.printf("calibration units: %-4s", unitAbbr[calUnit].c_str());
+      u8g2.printf("calibration units: %-4s", unitAbbr[calUnit]);
       sendBufferSPISafe();
     }
 
