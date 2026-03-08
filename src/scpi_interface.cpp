@@ -905,7 +905,7 @@ static const scpi_command_t scpi_commands[] = {
     { .pattern = "MEASure:WEIGht:AVERage:SIZE?",  .callback = Meas_WeightAvgSizeQ, },
     { .pattern = "MEASure:WEIGht:SDEViation?",    .callback = Meas_WeightSdevQ, },
     { .pattern = "MEASure:WEIGht:STABle?",        .callback = Meas_WeightStableQ, },
-    { .pattern = "MEASure:WEIGht:GROSS?",         .callback = Meas_WeightGrossQ, },
+    { .pattern = "MEASure:WEIGht:GROSs?",          .callback = Meas_WeightGrossQ, },
     { .pattern = "MEASure:WEIGht:OVERload?",      .callback = Meas_WeightOverloadQ, },
 
     /* Force aliases (same callbacks as Weight) */
@@ -919,7 +919,7 @@ static const scpi_command_t scpi_commands[] = {
     { .pattern = "MEASure:FORCe:AVERage:SIZE?",   .callback = Meas_WeightAvgSizeQ, },
     { .pattern = "MEASure:FORCe:SDEViation?",     .callback = Meas_WeightSdevQ, },
     { .pattern = "MEASure:FORCe:STABle?",         .callback = Meas_WeightStableQ, },
-    { .pattern = "MEASure:FORCe:GROSS?",          .callback = Meas_WeightGrossQ, },
+    { .pattern = "MEASure:FORCe:GROSs?",           .callback = Meas_WeightGrossQ, },
     { .pattern = "MEASure:FORCe:OVERload?",       .callback = Meas_WeightOverloadQ, },
 
     /* Configuration */
