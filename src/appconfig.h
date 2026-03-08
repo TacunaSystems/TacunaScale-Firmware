@@ -18,7 +18,8 @@
 
 // Unit enumerations
 enum e_backlightEnable {off = 0, on = 1, on_motion = 2};
-enum e_unitVal {kg = 0, lb = 1};
+enum e_unitVal {kg = 0, lb = 1, N = 2, Nm = 3, lbft = 4};
+#define UNIT_VAL_COUNT 5
 
 // EEPROM address map (shared between PennerScale.cpp and scpi_interface.cpp)
 #define EEPROM_ADDR_CAL_VALUE    0
