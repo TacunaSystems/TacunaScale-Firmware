@@ -239,6 +239,7 @@ static scpi_result_t Conf_Unit(scpi_t *context) {
         return SCPI_RES_ERR;
     }
     e_unitVal newUnit = (e_unitVal) val;
+    taskENTER_CRITICAL(&measMux);
     if (newUnit != unitVal) {
         float convFactor = unitConversionFactor(unitVal, newUnit);
         overloadCapacity *= convFactor;
@@ -246,6 +247,7 @@ static scpi_result_t Conf_Unit(scpi_t *context) {
         extADCRunAV.clear();
         unitVal = newUnit;
     }
+    taskEXIT_CRITICAL(&measMux);
     return SCPI_RES_OK;
 }
 

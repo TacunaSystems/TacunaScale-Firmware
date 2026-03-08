@@ -1089,7 +1089,9 @@ void UpdateWeightReadingLCD()
     u8g2.print(s_extADCweight.substring(s_extADCweight.length()-WVAL_DEC_PLS).c_str());
 
     u8g2.setFont(UNIT_FONT);
-    const char *uStr = unitAbbr[unitVal];
+    e_unitVal unitSnap = unitVal;
+    const char *uStr = ((int)unitSnap >= 0 && (int)unitSnap < UNIT_VAL_COUNT)
+        ? unitAbbr[unitSnap] : "?";
     u8g2.setCursor(u8g2.getDisplayWidth() - u8g2.getStrWidth(uStr), UNIT_Y_POS);
     u8g2.print(uStr);
 
