@@ -115,7 +115,7 @@ const float  PWR_5V_LVL_VDIV_SCLR = (1/0.5); // // Multiply ADC Volts by this sc
 #define BAT_IND_HEIGHT 6
 #define BAT_BUMP_HEIGHT 2
 #define BAT_BUMP_WIDTH 2
-#define BAT_IND_Y_POS (WVAL_Y_POS - 29)
+#define BAT_IND_Y_POS 1  // Top-right corner of display
 #define BAT_IND_X_POS (u8g2.getDisplayWidth() - BAT_IND_WIDTH)
 
 // FreeRTOS constants
