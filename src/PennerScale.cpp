@@ -1476,10 +1476,16 @@ float unitConversionFactor(e_unitVal from, e_unitVal to) {
   // Mass conversions
   if (from == kg && to == lb) return kgtolbScalar;
   if (from == lb && to == kg) return 1.0f / kgtolbScalar;
+  // Force conversions (kg ↔ N)
+  if (from == kg && to == N)  return kgtoNScalar;
+  if (from == N  && to == kg) return 1.0f / kgtoNScalar;
+  // Force ↔ mass cross (lb ↔ N) via kg
+  if (from == lb && to == N)  return (1.0f / kgtolbScalar) * kgtoNScalar;
+  if (from == N  && to == lb) return (1.0f / kgtoNScalar) * kgtolbScalar;
   // Torque conversions
   if (from == Nm && to == lbft) return NmtolbftScalar;
   if (from == lbft && to == Nm) return 1.0f / NmtolbftScalar;
-  // Cross-type or N (standalone) — no conversion
+  // Cross-type (e.g. mass → torque) — no conversion
   return 1.0f;
 }
 
