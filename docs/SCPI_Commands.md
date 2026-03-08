@@ -96,6 +96,8 @@ via `SYSTem:ERRor?`. The queue holds up to 17 entries.
 | `CONFigure:ADC:FILTer?` | Query current filter type | — |
 | `CONFigure:ADC:NOTCh <ON\|OFF>` | Enable/disable 50/60 Hz notch rejection (runtime only) | Boolean |
 | `CONFigure:ADC:NOTCh?` | Query notch filter state | — |
+| `CONFigure:ADC:INVert <ON\|OFF>` | Invert ADC polarity (persists). Negates all raw and weight values. Calibration is preserved — no re-calibration required. | Boolean |
+| `CONFigure:ADC:INVert?` | Query ADC inversion state | Bool (0/1) |
 
 ### Stability and Overload
 
@@ -191,6 +193,7 @@ fields directly from flash.
 | 39 | adaptiveFilterEnable | uint8_t | `CONF:FILT:ADAP`, power-down |
 | 40 | adaptiveFilterPct | float | `CONF:FILT:ADAP:THR`, power-down |
 | 44 | adaptiveFilterTimeUs | uint32_t | `CONF:FILT:ADAP:TIME`, power-down |
+| 48 | adcInvert | uint8_t | `CONF:ADC:INV`, power-down |
 
 ## Examples
 
@@ -214,7 +217,7 @@ SYST:EEPROM?
 → calValue=7168.220215,zeroValue=8295856,backlight=1,unit=KG,
    calWeight=100,calUnit=KG,weightMax=25.4321,backlightPWM=31,
    echo=1,prompt=1,stabThresh=0.0002,overCap=500.0000,
-   adaptEn=1,adaptThr=1.0000,adaptTimeUs=750000
+   adaptEn=1,adaptThr=1.0000,adaptTimeUs=750000,adcInvert=0
 
 # Reset peak weight
 MEAS:WEIG:MAX 0
@@ -274,6 +277,16 @@ CONF:OVER:CAP 0.001
 MEAS:WEIG:OVER?
 → 1
 CONF:OVER:CAP 500
+
+# ADC polarity inversion
+# Inverts all raw ADC values and derived weights.
+# Zero, tare, and peak are automatically adjusted — no re-calibration needed.
+CONF:ADC:INV?
+→ 0
+CONF:ADC:INV ON
+MEAS:WEIG?
+→ -25.4321
+CONF:ADC:INV OFF
 
 # Adaptive filter tuning
 CONF:FILT:ADAP?

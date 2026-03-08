@@ -36,7 +36,7 @@ pio run --target upload
 3. Visit: https://espressif.github.io/esptool-js/
 4. Click 'Connect'
 5. Select the COM port from step 2 and click 'Connect.'
-6. Enter 0 in 'Flash Address' and click 'Choose File' and select the firmware.bin file.
+6. Enter 0 in 'Flash Address' and click 'Choose File' and select the merged firmware binary (e.g. `TacunaScale_v1.1.0b.zip` → `firmware_merged.bin`).
 7. Click 'Program'
 8. Wait until the output shows 'Hash of data verified. Leaving...'
 9. Power cycle the board and the new firmware should be loaded.
@@ -115,7 +115,7 @@ library (LGPL-3.0). The AD7192 and AD7193 share the same register map, so the li
 correctly — however the library's `begin()` ID check will return false due to the device ID
 mismatch. This is expected and the return value is intentionally ignored. A proprietary
 AD719x family library is planned to replace this dependency
-(see [#3](https://github.com/TacunaSystems/Penner-Scale-Firmware/issues/3)).
+(see [#3](https://github.com/TacunaSystems/TacunaScale-Firmware/issues/3)).
 
 ### Third-Party Libraries
 
