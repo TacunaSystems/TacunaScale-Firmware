@@ -36,7 +36,8 @@ enum e_unitVal {kg = 0, lb = 1};
 #define EEPROM_ADDR_ADAPT_ENABLE  (EEPROM_ADDR_OVER_CAP      + (int)sizeof(float))
 #define EEPROM_ADDR_ADAPT_THRESH  (EEPROM_ADDR_ADAPT_ENABLE  + (int)sizeof(uint8_t))
 #define EEPROM_ADDR_ADAPT_TIME    (EEPROM_ADDR_ADAPT_THRESH  + (int)sizeof(float))
-#define EEPROM_ADDR_END           (EEPROM_ADDR_ADAPT_TIME    + (int)sizeof(uint32_t))
+#define EEPROM_ADDR_ADC_INVERT    (EEPROM_ADDR_ADAPT_TIME    + (int)sizeof(uint32_t))
+#define EEPROM_ADDR_END           (EEPROM_ADDR_ADC_INVERT   + (int)sizeof(uint8_t))
 #define EEPROM_SIZE_BYTES         EEPROM_ADDR_END
 
 // Power good pins (shared — read by SCPI handlers)

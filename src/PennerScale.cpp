@@ -193,6 +193,7 @@ float overloadCapacity = OVER_CAP_DEFAULT;
 bool adaptiveFilterEnable = ADAPT_FILTER_DEFAULT;
 float adaptiveFilterPct = ADAPT_THRESH_DEFAULT;
 uint32_t adaptiveFilterTimeUs = ADAPT_TIME_DEFAULT;
+bool adcInvert = false;
 bool updateLCDWeight = true;
 volatile bool newWeightReady = false;
 bool noActivityPowerDownFlag = false;
@@ -396,6 +397,12 @@ void setup() {
     adaptiveFilterTimeUs = EEPROMadaptTime;
   } else { eepromDirty = true; }
 
+  uint8_t EEPROMadcInvert;
+  EEPROM.get(EEPROM_ADDR_ADC_INVERT, EEPROMadcInvert);
+  if (EEPROMadcInvert <= 1) {
+    adcInvert = (bool) EEPROMadcInvert;
+  } else { eepromDirty = true; }
+
   // Write validated defaults back to EEPROM for any uninitialized fields
   if (eepromDirty) {
     EEPROM.put(EEPROM_ADDR_CAL_VALUE, calValue);
@@ -413,6 +420,7 @@ void setup() {
     EEPROM.put(EEPROM_ADDR_ADAPT_ENABLE, (uint8_t) adaptiveFilterEnable);
     EEPROM.put(EEPROM_ADDR_ADAPT_THRESH, adaptiveFilterPct);
     EEPROM.put(EEPROM_ADDR_ADAPT_TIME, adaptiveFilterTimeUs);
+    EEPROM.put(EEPROM_ADDR_ADC_INVERT, (uint8_t) adcInvert);
     EEPROM.commit();
     DBG_PRINTLN("EEPROM: initialized unset fields with defaults");
   }
@@ -502,6 +510,7 @@ void setup() {
     AD7193.channelSelect(AD7193_CH_0);  // Set the ADC back to Ch0 to get ready for the ADC read task
 
     // If DIP switch 1 is off (logic high), then scale is configured for single channel.  Otherwise use both channels.
+    if (adcInvert) { extADCResultCh0 = -extADCResultCh0; extADCResultCh1 = -extADCResultCh1; }
     if(configSwitch1) extADCResult = extADCResultCh0; else extADCResult = extADCResultCh0 + extADCResultCh1;
 
     tareValue = (extADCResult - zeroValue)/calValue;
@@ -745,7 +754,7 @@ void TaskExtAnalogRead(void *pvParameters)
     // --- Ch0 read (mutex held only during SPI transaction) ---
     // AD7193 library manages its own beginTransaction/endTransaction internally
     xSemaphoreTake(SPImutex, portMAX_DELAY);
-    extADCResultCh0 = AD7193.singleConversion();
+    int32_t ch0 = AD7193.singleConversion();
     AD7193.channelSelect(AD7193_CH_1);
     xSemaphoreGive(SPImutex);
 
@@ -754,12 +763,16 @@ void TaskExtAnalogRead(void *pvParameters)
 
     // --- Ch1 read (mutex held only during SPI transaction) ---
     xSemaphoreTake(SPImutex, portMAX_DELAY);
-    extADCResultCh1 = AD7193.singleConversion();
+    int32_t ch1 = AD7193.singleConversion();
     AD7193.channelSelect(AD7193_CH_0);
     xSemaphoreGive(SPImutex);
 
-    // If DIP switch 1 is off (logic high), then scale is configured for single channel.  Otherwise use both channels.
-    if(configSwitch1) extADCResult = extADCResultCh0; else extADCResult = extADCResultCh0 + extADCResultCh1;
+    // Apply polarity inversion to locals before writing globals
+    // (prevents SCPI queries from seeing un-negated values during the delay)
+    if (adcInvert) { ch0 = -ch0; ch1 = -ch1; }
+    extADCResultCh0 = ch0;
+    extADCResultCh1 = ch1;
+    if(configSwitch1) extADCResult = ch0; else extADCResult = ch0 + ch1;
     extADCweight = (calValue != 0.0f) ? (extADCResult - zeroValue)/calValue - tareValue : 0.0f;
     if(calUnit == lb && unitVal == kg) extADCweight = extADCweight / kgtolbScalar;
     else if(calUnit == kg && unitVal == lb) extADCweight = extADCweight * kgtolbScalar;
