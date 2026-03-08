@@ -33,7 +33,10 @@ extern uint8_t backlightPWM;
 extern volatile bool scpiEchoEnable;
 extern volatile bool scpiPromptEnable;
 extern const float kgtolbScalar;
-extern const String unitAbbr[];
+extern const float kgtoNScalar;
+extern const float NmtolbftScalar;
+extern const char* const unitAbbr[];
+extern float unitConversionFactor(e_unitVal from, e_unitVal to);
 extern portMUX_TYPE measMux;
 extern float   stabThreshold;
 extern float   overloadCapacity;
@@ -97,8 +100,11 @@ static scpi_result_t My_CoreTstQ(scpi_t *context) {
 /*  Unit choice list for CONFigure:UNIT                               */
 /* ------------------------------------------------------------------ */
 static const scpi_choice_def_t unit_choices[] = {
-    {"KG", (int32_t) kg},
-    {"LB", (int32_t) lb},
+    {"KG",   (int32_t) kg},
+    {"LB",   (int32_t) lb},
+    {"N",    (int32_t) N},
+    {"NM",   (int32_t) Nm},
+    {"LBFT", (int32_t) lbft},
     SCPI_CHOICE_LIST_END
 };
 
@@ -207,9 +213,7 @@ static scpi_result_t Meas_WeightGrossQ(scpi_t *context) {
     taskEXIT_CRITICAL(&measMux);
     /* avg is already in display units (after tare subtraction).
        tareValue is in calUnit — convert to display units. */
-    float tareDisplay = tareValue;
-    if (calUnit == lb && unitVal == kg)       tareDisplay = tareValue / kgtolbScalar;
-    else if (calUnit == kg && unitVal == lb)  tareDisplay = tareValue * kgtolbScalar;
+    float tareDisplay = tareValue * unitConversionFactor(calUnit, unitVal);
     float gross = avg + tareDisplay;
     SCPI_ResultFloat(context, gross);
     return SCPI_RES_OK;
@@ -228,24 +232,22 @@ static scpi_result_t Meas_WeightOverloadQ(scpi_t *context) {
 /*  Configuration commands                                            */
 /* ------------------------------------------------------------------ */
 
-/* CONFigure:UNIT <KG|LB> */
+/* CONFigure:UNIT <KG|LB|N|NM|LBFT> */
 static scpi_result_t Conf_Unit(scpi_t *context) {
     int32_t val;
     if (!SCPI_ParamChoice(context, unit_choices, &val, TRUE)) {
         return SCPI_RES_ERR;
     }
     e_unitVal newUnit = (e_unitVal) val;
+    taskENTER_CRITICAL(&measMux);
     if (newUnit != unitVal) {
-        if (newUnit == lb) {
-            overloadCapacity *= kgtolbScalar;
-            extADCweightMax *= kgtolbScalar;
-        } else {
-            overloadCapacity /= kgtolbScalar;
-            extADCweightMax /= kgtolbScalar;
-        }
+        float convFactor = unitConversionFactor(unitVal, newUnit);
+        overloadCapacity *= convFactor;
+        extADCweightMax *= convFactor;
         extADCRunAV.clear();
         unitVal = newUnit;
     }
+    taskEXIT_CRITICAL(&measMux);
     return SCPI_RES_OK;
 }
 
@@ -557,7 +559,7 @@ static scpi_result_t Cal_UnitQ(scpi_t *context) {
     return SCPI_RES_OK;
 }
 
-/* CALibration:UNIT <KG|LB> — set calibration unit and persist */
+/* CALibration:UNIT <KG|LB|N|NM|LBFT> — set calibration unit and persist */
 static scpi_result_t Cal_Unit(scpi_t *context) {
     int32_t val;
     if (!SCPI_ParamChoice(context, unit_choices, &val, TRUE)) {
@@ -905,8 +907,22 @@ static const scpi_command_t scpi_commands[] = {
     { .pattern = "MEASure:WEIGht:AVERage:SIZE?",  .callback = Meas_WeightAvgSizeQ, },
     { .pattern = "MEASure:WEIGht:SDEViation?",    .callback = Meas_WeightSdevQ, },
     { .pattern = "MEASure:WEIGht:STABle?",        .callback = Meas_WeightStableQ, },
-    { .pattern = "MEASure:WEIGht:GROSS?",         .callback = Meas_WeightGrossQ, },
+    { .pattern = "MEASure:WEIGht:GROSs?",          .callback = Meas_WeightGrossQ, },
     { .pattern = "MEASure:WEIGht:OVERload?",      .callback = Meas_WeightOverloadQ, },
+
+    /* Force aliases (same callbacks as Weight) */
+    { .pattern = "MEASure:FORCe?",               .callback = Meas_WeightQ, },
+    { .pattern = "MEASure:FORCe:RAW?",           .callback = Meas_WeightRawQ, },
+    { .pattern = "MEASure:FORCe:RAW:CH0?",       .callback = Meas_WeightRawCh0Q, },
+    { .pattern = "MEASure:FORCe:RAW:CH1?",       .callback = Meas_WeightRawCh1Q, },
+    { .pattern = "MEASure:FORCe:MAX",             .callback = Meas_WeightMax, },
+    { .pattern = "MEASure:FORCe:MAX?",            .callback = Meas_WeightMaxQ, },
+    { .pattern = "MEASure:FORCe:AVERage:COUNt?",  .callback = Meas_WeightAvgCountQ, },
+    { .pattern = "MEASure:FORCe:AVERage:SIZE?",   .callback = Meas_WeightAvgSizeQ, },
+    { .pattern = "MEASure:FORCe:SDEViation?",     .callback = Meas_WeightSdevQ, },
+    { .pattern = "MEASure:FORCe:STABle?",         .callback = Meas_WeightStableQ, },
+    { .pattern = "MEASure:FORCe:GROSs?",           .callback = Meas_WeightGrossQ, },
+    { .pattern = "MEASure:FORCe:OVERload?",       .callback = Meas_WeightOverloadQ, },
 
     /* Configuration */
     { .pattern = "CONFigure:UNIT",   .callback = Conf_Unit, },
@@ -940,6 +956,8 @@ static const scpi_command_t scpi_commands[] = {
     { .pattern = "CALibration:ZERO?",   .callback = Cal_ZeroQ, },
     { .pattern = "CALibration:WEIGht",  .callback = Cal_Weight, },
     { .pattern = "CALibration:WEIGht?", .callback = Cal_WeightQ, },
+    { .pattern = "CALibration:FORCe",   .callback = Cal_Weight, },
+    { .pattern = "CALibration:FORCe?",  .callback = Cal_WeightQ, },
     { .pattern = "CALibration:UNIT",    .callback = Cal_Unit, },
     { .pattern = "CALibration:UNIT?",   .callback = Cal_UnitQ, },
     { .pattern = "CALibration:ZERO:EXEC", .callback = Cal_ZeroExec, },

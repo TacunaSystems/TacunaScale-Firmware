@@ -63,7 +63,7 @@ via `SYSTem:ERRor?`. The queue holds up to 17 entries.
 
 | Command | Description | Returns |
 |---------|-------------|---------|
-| `MEASure:WEIGht?` | Averaged weight in current display unit | Float (kg or lb) |
+| `MEASure:WEIGht?` | Averaged weight in current display unit | Float |
 | `MEASure:WEIGht:RAW?` | Combined raw ADC counts (Ch0 + Ch1 or Ch0 only) | Int32 |
 | `MEASure:WEIGht:RAW:CH0?` | Raw ADC counts, channel 0 | Int32 |
 | `MEASure:WEIGht:RAW:CH1?` | Raw ADC counts, channel 1 | Int32 |
@@ -76,11 +76,27 @@ via `SYSTem:ERRor?`. The queue holds up to 17 entries.
 | `MEASure:WEIGht:GROSS?` | Weight before tare subtraction, in current display unit | Float |
 | `MEASure:WEIGht:OVERload?` | Overload flag: 1 = abs(weight) > capacity, 0 = OK | Bool (0/1) |
 
+All `MEASure:WEIGht` commands are also available as `MEASure:FORCe` aliases
+(e.g. `MEAS:FORC?` is equivalent to `MEAS:WEIG?`).
+
 ## Configuration Commands
+
+### Units
+
+| Token | Unit | Type | Conversions |
+|-------|------|------|-------------|
+| `KG` | Kilogram | Mass | KG ↔ LB, KG ↔ N |
+| `LB` | Pound | Mass | LB ↔ KG, LB ↔ N |
+| `N` | Newton | Force | N ↔ KG, N ↔ LB |
+| `NM` | Newton-meter | Torque | NM ↔ LBFT |
+| `LBFT` | Pound-foot | Torque | LBFT ↔ NM |
+
+Switching between compatible units auto-converts overload capacity and peak
+weight. Cross-type changes (e.g. mass → torque) change only the label.
 
 | Command | Description | Parameter |
 |---------|-------------|-----------|
-| `CONFigure:UNIT <KG\|LB>` | Set display unit | `KG` or `LB` |
+| `CONFigure:UNIT <KG\|LB\|N\|NM\|LBFT>` | Set display unit | `KG`, `LB`, `N`, `NM`, or `LBFT` |
 | `CONFigure:UNIT?` | Query current display unit | — |
 | `CONFigure:TARE [<value>]` | Tare — no param: auto-tare from current reading. With param: set tare offset directly (in cal units) | Float (optional) |
 | `CONFigure:TARE?` | Query current tare offset | — |
@@ -142,9 +158,12 @@ All set commands persist immediately to EEPROM.
 | `CALibration:WEIGht?` | Query calibration weight | — |
 | `CALibration:WEIGht <val>` | Set calibration weight | UInt32 |
 | `CALibration:UNIT?` | Query calibration unit | — |
-| `CALibration:UNIT <KG\|LB>` | Set calibration unit | `KG` or `LB` |
+| `CALibration:UNIT <KG\|LB\|N\|NM\|LBFT>` | Set calibration unit | `KG`, `LB`, `N`, `NM`, or `LBFT` |
 | `CALibration:ZERO:EXEC` | Block until settled (~2.5 s), capture zero reference, persist | — |
 | `CALibration:SPAN:EXEC` | Block until settled (~2.5 s), auto-compute calValue, persist | — |
+
+`CALibration:WEIGht` and `CALibration:WEIGht?` are also available as
+`CALibration:FORCe` aliases.
 
 ## System Commands
 

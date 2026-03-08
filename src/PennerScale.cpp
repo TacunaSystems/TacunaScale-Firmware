@@ -97,16 +97,15 @@ const float  PWR_5V_LVL_VDIV_SCLR = (1/0.5); // // Multiply ADC Volts by this sc
 #define USER_MSG_Y_LINE_HEIGHT 10
 
 // LCD weight reading formatting constants
-#define WVAL_X_POS 112 // Reading is rigit-aligned, so x position should be the right most location
-#define WVAL_Y_POS 44
+#define WVAL_X_POS 128 // Reading is right-aligned to full display width (unit moved to line below)
+#define WVAL_Y_POS 43
 #define WVAL_DEC_PLS 1
 #define WVAL_PREC 1
-#define UNIT_X_POS 115
-#define UNIT_Y_POS WVAL_Y_POS
+#define UNIT_Y_POS 64  // Unit at bottom of display, right-justified
 #define DEC_PT_W_PX 5  // Actual width of the decimal point in px
 #define DEC_PT_S_PX 7  // Space generated between numbers to allow for decimal point in px (usually ~1.5x dec pt width)
 #define WVAL_FONT u8g2_font_inb21_mn
-#define UNIT_FONT u8g2_font_7x13B_mr
+#define UNIT_FONT u8g2_font_7x13B_mf  // Bold, full Unicode (includes middle dot ·)
 #define MSG_FONT u8g2_font_6x12_m_symbols
 #define FW_FONT u8g2_font_4x6_mr
 #define LCD_CONTRAST 60
@@ -116,7 +115,7 @@ const float  PWR_5V_LVL_VDIV_SCLR = (1/0.5); // // Multiply ADC Volts by this sc
 #define BAT_IND_HEIGHT 6
 #define BAT_BUMP_HEIGHT 2
 #define BAT_BUMP_WIDTH 2
-#define BAT_IND_Y_POS (WVAL_Y_POS - 29)
+#define BAT_IND_Y_POS 1  // Top-right corner of display
 #define BAT_IND_X_POS (u8g2.getDisplayWidth() - BAT_IND_WIDTH)
 
 // FreeRTOS constants
@@ -149,6 +148,7 @@ void sendBufferSPISafe(void);
 void powerDown(void);
 float removeNegativeSignFromZero(float weightValue);
 float analogReadVoltage(byte pin);
+float unitConversionFactor(e_unitVal from, e_unitVal to);
 
 SemaphoreHandle_t SPImutex = xSemaphoreCreateMutex();
 portMUX_TYPE measMux = portMUX_INITIALIZER_UNLOCKED;  // Spinlock for measurement data shared with SCPI
@@ -187,7 +187,9 @@ uint32_t calWeight = MIN_CAL_VAL; // default calibration weight
 e_unitVal calUnit = DEFAULT_UNIT; // default calibration unit
 
 extern const float kgtolbScalar = 2.20462;
-const String unitAbbr[] = {"kg", "lb"};
+extern const float kgtoNScalar  = 9.80665;
+extern const float NmtolbftScalar = 0.737562;
+const char* const unitAbbr[] = {"kg", "lb", "N", "N\xb7m", "lb\xb7""ft"};
 float stabThreshold   = STAB_THRESH_DEFAULT;
 float overloadCapacity = OVER_CAP_DEFAULT;
 bool adaptiveFilterEnable = ADAPT_FILTER_DEFAULT;
@@ -330,13 +332,13 @@ void setup() {
   if (EEPROMbacklightEnable >= 0 && EEPROMbacklightEnable <= 2) {
     backlightEnable = EEPROMbacklightEnable;
   } else { eepromDirty = true; }
-  if (EEPROMunitVal >= 0 && EEPROMunitVal <= 1) {
+  if (EEPROMunitVal >= 0 && EEPROMunitVal < UNIT_VAL_COUNT) {
     unitVal = EEPROMunitVal;
   } else { eepromDirty = true; }
   if (EEPROMcalWeight != 4294967295) {
     calWeight = EEPROMcalWeight;
   } else { eepromDirty = true; }
-  if (EEPROMcalUnit >= 0 && EEPROMcalUnit <= 1)
+  if (EEPROMcalUnit >= 0 && EEPROMcalUnit < UNIT_VAL_COUNT)
   {
     calUnit = EEPROMcalUnit;
   }
@@ -642,18 +644,15 @@ void TaskUI(void *pvParameters)
     // Check unit button flag
     if (unitButtonFlag == short_press_flag)
     {
-      // Change units
+      // Change units — cycle through all units, convert capacity/peak within same type
       DBG_PRINTF("Change unit flag set.\n");
       unitButtonFlag = no_press_flag;
-      if(unitVal == kg) {
-        unitVal = lb;
-        overloadCapacity *= kgtolbScalar;
-        extADCweightMax *= kgtolbScalar;
-      } else if(unitVal == lb) {
-        unitVal = kg;
-        overloadCapacity /= kgtolbScalar;
-        extADCweightMax /= kgtolbScalar;
-      }
+      e_unitVal oldUnit = unitVal;
+      unitVal = (e_unitVal)((unitVal + 1) % UNIT_VAL_COUNT);
+      // Convert overloadCapacity and peak weight between compatible units
+      float convFactor = unitConversionFactor(oldUnit, unitVal);
+      overloadCapacity *= convFactor;
+      extADCweightMax *= convFactor;
       extADCRunAV.clear();
     }
     else if (unitButtonFlag == long_press_flag)
@@ -774,8 +773,7 @@ void TaskExtAnalogRead(void *pvParameters)
     extADCResultCh1 = ch1;
     if(configSwitch1) extADCResult = ch0; else extADCResult = ch0 + ch1;
     extADCweight = (calValue != 0.0f) ? (extADCResult - zeroValue)/calValue - tareValue : 0.0f;
-    if(calUnit == lb && unitVal == kg) extADCweight = extADCweight / kgtolbScalar;
-    else if(calUnit == kg && unitVal == lb) extADCweight = extADCweight * kgtolbScalar;
+    extADCweight *= unitConversionFactor(calUnit, unitVal);
     extADCweight = removeNegativeSignFromZero(extADCweight);
     // DBG_PRINTF("extADCweight: %f\n", extADCweight);
 
@@ -817,7 +815,8 @@ void TaskExtAnalogRead(void *pvParameters)
     int32_t adcChange = abs(extADCResult - lastExtADCResultRaw);
     lastExtADCResultRaw = extADCResult;
     weightChangeLB = abs(lastExtADCweight - extADCweight);
-    if(unitVal == kg) weightChangeLB = (weightChangeLB * kgtolbScalar);
+    // Convert weight change to lb for power-down/idle threshold comparison
+    weightChangeLB *= unitConversionFactor(unitVal, lb);
 
     // --- Power-down activity detection (original thresholds) ---
     bool powerDownActivity = (calValue != 0.0f)
@@ -842,9 +841,7 @@ void TaskExtAnalogRead(void *pvParameters)
     // Derive full-scale capacity from ADC range and calibration factor
     // (calWeight is just the reference weight, not the scale's capacity)
     float fullScaleWeight = (float)ADC_FULL_SCALE / calValue;  // in calUnit
-    float idleThresholdLB = (calUnit == kg)
-      ? (fullScaleWeight * kgtolbScalar * IDLE_ACTIVITY_PCT / 100.0f)
-      : (fullScaleWeight * IDLE_ACTIVITY_PCT / 100.0f);
+    float idleThresholdLB = fullScaleWeight * unitConversionFactor(calUnit, lb) * IDLE_ACTIVITY_PCT / 100.0f;
     int32_t idleThresholdADC = (int32_t)((float)ADC_FULL_SCALE * IDLE_ACTIVITY_PCT / 100.0f);
     bool idleActivity = (calValue != 0.0f)
       ? (weightChangeLB > idleThresholdLB)
@@ -1092,9 +1089,11 @@ void UpdateWeightReadingLCD()
     u8g2.print(s_extADCweight.substring(s_extADCweight.length()-WVAL_DEC_PLS).c_str());
 
     u8g2.setFont(UNIT_FONT);
-    u8g2.setCursor(UNIT_X_POS, UNIT_Y_POS);
-    
-    u8g2.print(unitAbbr[unitVal]);
+    e_unitVal unitSnap = unitVal;
+    const char *uStr = ((int)unitSnap >= 0 && (int)unitSnap < UNIT_VAL_COUNT)
+        ? unitAbbr[unitSnap] : "?";
+    u8g2.setCursor(u8g2.getDisplayWidth() - u8g2.getStrWidth(uStr), UNIT_Y_POS);
+    u8g2.print(uStr);
 
     // Print battery indicator
     u8g2.drawFrame(BAT_IND_X_POS, BAT_IND_Y_POS, BAT_IND_WIDTH - BAT_BUMP_WIDTH, BAT_IND_HEIGHT);
@@ -1192,10 +1191,9 @@ void doCalibration()
       // Change cal units
       DBG_PRINTF("Change cal unit flag set.\n");
       unitButtonFlag = no_press_flag;
-      if(calUnit == kg) calUnit = lb;
-      else if(calUnit == lb) calUnit = kg; 
+      calUnit = (e_unitVal)((calUnit + 1) % UNIT_VAL_COUNT);
       u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
-      u8g2.printf("calibration units: %s", unitAbbr[calUnit]); 
+      u8g2.printf("calibration units: %-4s", unitAbbr[calUnit]);
       sendBufferSPISafe();
     }
 
@@ -1468,6 +1466,29 @@ void powerDown(void)
   while(digitalRead(PWR_ZERO_BTN));
   digitalWrite(V3V3_EN, LOW);
   for (;;);
+}
+
+/* Return the multiplicative conversion factor from one display unit to another.
+   Conversions are only meaningful within the same measurement type:
+     mass:   kg ↔ lb
+     torque: Nm ↔ lbft
+   Cross-type changes (e.g. kg → Nm) return 1.0 (no conversion). */
+float unitConversionFactor(e_unitVal from, e_unitVal to) {
+  if (from == to) return 1.0f;
+  // Mass conversions
+  if (from == kg && to == lb) return kgtolbScalar;
+  if (from == lb && to == kg) return 1.0f / kgtolbScalar;
+  // Force conversions (kg ↔ N)
+  if (from == kg && to == N)  return kgtoNScalar;
+  if (from == N  && to == kg) return 1.0f / kgtoNScalar;
+  // Force ↔ mass cross (lb ↔ N) via kg
+  if (from == lb && to == N)  return (1.0f / kgtolbScalar) * kgtoNScalar;
+  if (from == N  && to == lb) return (1.0f / kgtoNScalar) * kgtolbScalar;
+  // Torque conversions
+  if (from == Nm && to == lbft) return NmtolbftScalar;
+  if (from == lbft && to == Nm) return 1.0f / NmtolbftScalar;
+  // Cross-type (e.g. mass → torque) — no conversion
+  return 1.0f;
 }
 
 float removeNegativeSignFromZero(float weightValue)
