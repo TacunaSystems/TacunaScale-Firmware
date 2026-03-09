@@ -1,6 +1,6 @@
 # TacunaScale SCPI Command Reference
 
-**Firmware:** 1.1.0b | **Updated:** 2026-03-06
+**Firmware:** 1.1.0c | **Updated:** 2026-03-09
 
 ## Communication
 
@@ -219,7 +219,7 @@ fields directly from flash.
 ```
 # Identify the instrument
 *IDN?
-→ Tacuna Systems,TacunaScale,00000000,1.1.0b
+→ Tacuna Systems,TacunaScale,00000000,1.1.0c
 
 # Read weight
 MEAS:WEIG?
