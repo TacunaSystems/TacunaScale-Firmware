@@ -153,6 +153,12 @@ float unitConversionFactor(e_unitVal from, e_unitVal to);
 SemaphoreHandle_t SPImutex = xSemaphoreCreateMutex();
 portMUX_TYPE measMux = portMUX_INITIALIZER_UNLOCKED;  // Spinlock for measurement data shared with SCPI
 
+// EEPROM address helpers — map channel index to EEPROM address
+static int eepromAddrCalValue(int ch)  { return ch ? EEPROM_ADDR_CH1_CAL_VALUE  : EEPROM_ADDR_CAL_VALUE; }
+static int eepromAddrZeroValue(int ch) { return ch ? EEPROM_ADDR_CH1_ZERO_VALUE : EEPROM_ADDR_ZERO_VALUE; }
+static int eepromAddrCalUnit(int ch)   { return ch ? EEPROM_ADDR_CH1_CAL_UNIT   : EEPROM_ADDR_CAL_UNIT; }
+static int eepromAddrCalWeight(int ch) { return ch ? EEPROM_ADDR_CH1_CAL_WEIGHT : EEPROM_ADDR_CAL_WEIGHT; }
+
 // Global variables — per-channel arrays (index 0 = Ch0, 1 = Ch1)
 RunningAverage extADCRunAV[NUM_CHANNELS] = {
     RunningAverage(EXT_ADC_AVG_SAMPLE_NUM),
@@ -1267,135 +1273,97 @@ void doCalibration()
   powerButtonFlag = no_press_flag;
   unitButtonFlag = no_press_flag;  
 
-  // Set calibration units (shared across both channels)
-  e_unitVal selCalUnit = unitVal[0];
-  u8g2.clearBuffer();
-  u8g2.setCursor(0, USER_MSG_Y_POS);
-  u8g2.print("Press UNIT to select");
-  u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
-  u8g2.printf("calibration units: %s", unitAbbr[selCalUnit]);
-  u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT * 2);
-  u8g2.print("Press ZERO to cont.");
-  sendBufferSPISafe();
-
   // Allow user to release ZERO before proceeding
   while (powerButtonFlag != no_press_flag)
   {
     vTaskDelay(DEBOUNCE_TIME/portTICK_PERIOD_MS);
   }
 
-  // Wait for user to press ZERO
-  while (powerButtonFlag == no_press_flag)
-  {
-    // Check unit button flag
-    if (unitButtonFlag == short_press_flag)
-    {
-      // Change cal units
-      DBG_PRINTF("Change cal unit flag set.\n");
-      unitButtonFlag = no_press_flag;
-      selCalUnit = (e_unitVal)((selCalUnit + 1) % UNIT_VAL_COUNT);
-      u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
-      u8g2.printf("calibration units: %-4s", unitAbbr[selCalUnit]);
-      sendBufferSPISafe();
-    }
-
-    vTaskDelay(DEBOUNCE_TIME/portTICK_PERIOD_MS);
-  }
-
-  // Reset button flag
-  powerButtonFlag = no_press_flag;
-
-  // Set calibration weight (shared for both channels)
-  uint32_t selCalWeight = calWeight[0];
-  u8g2.clearBuffer();
-  u8g2.setCursor(0, USER_MSG_Y_POS);
-  u8g2.print("Press ");
-  u8g2.drawGlyph(u8g2.getCursorX(), u8g2.getCursorY(), 0x25e0); // Up arrow
-  u8g2.setCursor (u8g2.getCursorX() + u8g2.getMaxCharWidth(), u8g2.getCursorY());
-  u8g2.print(" or ");
-  u8g2.drawGlyph(u8g2.getCursorX(), u8g2.getCursorY(), 0x25e1);   // Down arrow
-  u8g2.setCursor (u8g2.getCursorX() + u8g2.getMaxCharWidth(), u8g2.getCursorY());
-  u8g2.print(" to set");
-  u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
-  u8g2.printf("cal. weight: %5u %s", selCalWeight, unitAbbr[selCalUnit]);
-  u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT * 2);
-  u8g2.print("Press ZERO to cont.");
-  sendBufferSPISafe();
-
-// Wait for user to press ZERO
-  while (powerButtonFlag == no_press_flag)
-  {
-    if (bklButtonStat)
-    {
-      if (bklButtonStat == long_press)
-      {
-        if (selCalWeight < (MAX_CAL_VAL-10)) selCalWeight += 10;
-        else selCalWeight = MAX_CAL_VAL;
-      }
-      else
-      {
-        if (selCalWeight < (MAX_CAL_VAL)) selCalWeight ++;
-      }
-      u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
-      u8g2.printf("cal. weight: %5u %s", selCalWeight, unitAbbr[selCalUnit]);
-      sendBufferSPISafe();
-    }
-    if (unitButtonStat)
-    {
-      if (unitButtonStat == long_press)
-      {
-        if (selCalWeight > (MIN_CAL_VAL + 10)) selCalWeight -= 10;
-        else selCalWeight = MIN_CAL_VAL;
-      }
-      else
-      {
-        if (selCalWeight > MIN_CAL_VAL) selCalWeight --;
-      }
-      u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
-      u8g2.printf("cal. weight: %5u %s", selCalWeight, unitAbbr[selCalUnit]);
-      sendBufferSPISafe();
-    }
-    vTaskDelay(150/portTICK_PERIOD_MS);
-  }
-
-  // Apply calWeight and calUnit to both channels and commit
+  // --- Per-channel calibration: unit, weight, zero, span for each channel ---
   for (int c = 0; c < NUM_CHANNELS; c++) {
-    calWeight[c] = selCalWeight;
+
+    // --- Select calibration unit for this channel ---
+    e_unitVal selCalUnit = calUnit[c];
+    u8g2.clearBuffer();
+    u8g2.setCursor(0, USER_MSG_Y_POS);
+    u8g2.printf("--Cal CH%d: Unit--", c);
+    u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
+    u8g2.printf("calibration units: %s", unitAbbr[selCalUnit]);
+    u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT * 2);
+    u8g2.print("Press ZERO to cont.");
+    sendBufferSPISafe();
+
+    powerButtonFlag = no_press_flag;
+    unitButtonFlag = no_press_flag;
+    while (powerButtonFlag == no_press_flag)
+    {
+      if (unitButtonFlag == short_press_flag)
+      {
+        DBG_PRINTF("CH%d: Change cal unit flag set.\n", c);
+        unitButtonFlag = no_press_flag;
+        selCalUnit = (e_unitVal)((selCalUnit + 1) % UNIT_VAL_COUNT);
+        u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
+        u8g2.printf("calibration units: %-4s", unitAbbr[selCalUnit]);
+        sendBufferSPISafe();
+      }
+      vTaskDelay(DEBOUNCE_TIME/portTICK_PERIOD_MS);
+    }
     calUnit[c] = selCalUnit;
-  }
-  EEPROM.put(EEPROM_ADDR_CAL_WEIGHT, calWeight[0]);
-  EEPROM.put(EEPROM_ADDR_CAL_UNIT, calUnit[0]);
-  EEPROM.put(EEPROM_ADDR_CH1_CAL_WEIGHT, calWeight[1]);
-  EEPROM.put(EEPROM_ADDR_CH1_CAL_UNIT, calUnit[1]);
-  EEPROM.commit();
+    powerButtonFlag = no_press_flag;
 
-  // Reset button flags
-  powerButtonFlag = no_press_flag;
-  unitButtonFlag = no_press_flag;
-  bklButtonFlag = no_press_flag;
+    // --- Select calibration weight for this channel ---
+    uint32_t selCalWeight = calWeight[c];
+    u8g2.clearBuffer();
+    u8g2.setCursor(0, USER_MSG_Y_POS);
+    u8g2.printf("--Cal CH%d: Weight--", c);
+    u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
+    u8g2.printf("cal. weight: %5u %s", selCalWeight, unitAbbr[selCalUnit]);
+    u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT * 2);
+    u8g2.print("Press ZERO to cont.");
+    sendBufferSPISafe();
 
-  u8g2.clearBuffer();
-  u8g2.setCursor(0, USER_MSG_Y_POS);
-  u8g2.print("--Scale Calibration--");
-  u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);  
-  u8g2.print("Unload scale then");
-  u8g2.setCursor(0, USER_MSG_Y_POS + 2 * USER_MSG_Y_LINE_HEIGHT);
-  u8g2.print("press ZERO.");
-  sendBufferSPISafe();
-  while (powerButtonFlag == no_press_flag)
-  {
-    vTaskDelay(DEBOUNCE_TIME/portTICK_PERIOD_MS);
-  }
+    while (powerButtonFlag == no_press_flag)
+    {
+      if (bklButtonStat)
+      {
+        if (bklButtonStat == long_press)
+        {
+          if (selCalWeight < (MAX_CAL_VAL-10)) selCalWeight += 10;
+          else selCalWeight = MAX_CAL_VAL;
+        }
+        else
+        {
+          if (selCalWeight < (MAX_CAL_VAL)) selCalWeight ++;
+        }
+        u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
+        u8g2.printf("cal. weight: %5u %s", selCalWeight, unitAbbr[selCalUnit]);
+        sendBufferSPISafe();
+      }
+      if (unitButtonStat)
+      {
+        if (unitButtonStat == long_press)
+        {
+          if (selCalWeight > (MIN_CAL_VAL + 10)) selCalWeight -= 10;
+          else selCalWeight = MIN_CAL_VAL;
+        }
+        else
+        {
+          if (selCalWeight > MIN_CAL_VAL) selCalWeight --;
+        }
+        u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
+        u8g2.printf("cal. weight: %5u %s", selCalWeight, unitAbbr[selCalUnit]);
+        sendBufferSPISafe();
+      }
+      vTaskDelay(150/portTICK_PERIOD_MS);
+    }
+    calWeight[c] = selCalWeight;
+    powerButtonFlag = no_press_flag;
+    unitButtonFlag = no_press_flag;
+    bklButtonFlag = no_press_flag;
 
-  // Reset button flags
-  powerButtonFlag = no_press_flag;
-  unitButtonFlag = no_press_flag;
-
-  // --- Per-channel calibration (zero then span for each channel) ---
-  for (int c = 0; c < NUM_CHANNELS; c++) {
+    // --- Zero capture ---
     for (int cc = 0; cc < NUM_CHANNELS; cc++) extADCRunAV[cc].clear();
 
-    // Zero capture
     u8g2.clearBuffer();
     u8g2.setCursor(0, USER_MSG_Y_POS);
     u8g2.printf("--Cal CH%d: Zero--", c);
@@ -1418,12 +1386,12 @@ void doCalibration()
 
     zeroValue[c] = extADCResultCh[c];
 
-    // Span capture
+    // --- Span capture ---
     u8g2.clearBuffer();
     u8g2.setCursor(0, USER_MSG_Y_POS);
     u8g2.printf("--Cal CH%d: Span--", c);
     u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
-    u8g2.printf("Load %u %s then press", selCalWeight, unitAbbr[selCalUnit]);
+    u8g2.printf("Load %u %s then press", calWeight[c], unitAbbr[calUnit[c]]);
     u8g2.setCursor(0, USER_MSG_Y_POS + 2 * USER_MSG_Y_LINE_HEIGHT);
     u8g2.print("ZERO.");
     sendBufferSPISafe();
@@ -1439,9 +1407,18 @@ void doCalibration()
     sendBufferSPISafe();
     vTaskDelay(5000/portTICK_PERIOD_MS);
 
-    calValue[c] = ((float)extADCResultCh[c] - (float)zeroValue[c]) / (float)selCalWeight;
+    calValue[c] = ((float)extADCResultCh[c] - (float)zeroValue[c]) / (float)calWeight[c];
 
-    DBG_PRINTF("CH%d: adc=%d zero=%d calVal=%f\n", c, extADCResultCh[c], zeroValue[c], calValue[c]);
+    DBG_PRINTF("CH%d: adc=%d zero=%d calVal=%f unit=%s weight=%u\n",
+               c, extADCResultCh[c], zeroValue[c], calValue[c],
+               unitAbbr[calUnit[c]], calWeight[c]);
+
+    // Persist this channel immediately (safe if process interrupted)
+    EEPROM.put(eepromAddrCalValue(c), calValue[c]);
+    EEPROM.put(eepromAddrZeroValue(c), zeroValue[c]);
+    EEPROM.put(eepromAddrCalUnit(c), calUnit[c]);
+    EEPROM.put(eepromAddrCalWeight(c), calWeight[c]);
+    EEPROM.commit();
   }
 
   // Show results
@@ -1457,17 +1434,6 @@ void doCalibration()
     extADCRunAV[c].clear();
     tareValue[c] = 0;
   }
-
-  // Persist both channels
-  EEPROM.put(EEPROM_ADDR_CAL_VALUE, calValue[0]);
-  EEPROM.put(EEPROM_ADDR_ZERO_VALUE, zeroValue[0]);
-  EEPROM.put(EEPROM_ADDR_CAL_UNIT, calUnit[0]);
-  EEPROM.put(EEPROM_ADDR_CAL_WEIGHT, calWeight[0]);
-  EEPROM.put(EEPROM_ADDR_CH1_CAL_VALUE, calValue[1]);
-  EEPROM.put(EEPROM_ADDR_CH1_ZERO_VALUE, zeroValue[1]);
-  EEPROM.put(EEPROM_ADDR_CH1_CAL_UNIT, calUnit[1]);
-  EEPROM.put(EEPROM_ADDR_CH1_CAL_WEIGHT, calWeight[1]);
-  EEPROM.commit();
 
   // Reset button flags
   powerButtonFlag = no_press_flag;
