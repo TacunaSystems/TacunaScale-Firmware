@@ -1282,6 +1282,28 @@ void doCalibration()
   // --- Per-channel calibration: unit, weight, zero, span for each channel ---
   for (int c = 0; c < NUM_CHANNELS; c++) {
 
+    // After CH0, offer to skip remaining channels
+    if (c > 0) {
+      u8g2.clearBuffer();
+      u8g2.setCursor(0, USER_MSG_Y_POS);
+      u8g2.printf("Calibrate CH%d?", c);
+      u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
+      u8g2.print("ZERO=Yes  UNIT=Skip");
+      sendBufferSPISafe();
+      powerButtonFlag = no_press_flag;
+      unitButtonFlag = no_press_flag;
+      while (powerButtonFlag == no_press_flag && unitButtonFlag == no_press_flag) {
+        vTaskDelay(DEBOUNCE_TIME/portTICK_PERIOD_MS);
+      }
+      bool skip = (unitButtonFlag != no_press_flag);
+      powerButtonFlag = no_press_flag;
+      unitButtonFlag = no_press_flag;
+      if (skip) {
+        DBG_PRINTF("CH%d calibration skipped by user\n", c);
+        break;
+      }
+    }
+
     // --- Select calibration unit for this channel ---
     e_unitVal selCalUnit = calUnit[c];
     u8g2.clearBuffer();
