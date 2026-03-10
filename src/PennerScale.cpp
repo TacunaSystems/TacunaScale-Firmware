@@ -101,7 +101,7 @@ const float  PWR_5V_LVL_VDIV_SCLR = (1/0.5); // // Multiply ADC Volts by this sc
 #define WVAL_Y_POS 43
 #define WVAL_DEC_PLS 1
 #define WVAL_PREC 1
-#define UNIT_Y_POS 64  // Unit at bottom of display, right-justified
+#define UNIT_Y_POS 61  // Unit at bottom of display, right-justified (3px margin for descenders)
 #define DEC_PT_W_PX 5  // Actual width of the decimal point in px
 #define DEC_PT_S_PX 7  // Space generated between numbers to allow for decimal point in px (usually ~1.5x dec pt width)
 #define WVAL_FONT u8g2_font_inb21_mn
@@ -115,7 +115,7 @@ const float  PWR_5V_LVL_VDIV_SCLR = (1/0.5); // // Multiply ADC Volts by this sc
 #define BAT_IND_HEIGHT 6
 #define BAT_BUMP_HEIGHT 2
 #define BAT_BUMP_WIDTH 2
-#define BAT_IND_Y_POS 1  // Top-right corner of display
+#define BAT_IND_Y_POS 4  // Top-right corner of display (3px margin to match unit bottom)
 #define BAT_IND_X_POS (u8g2.getDisplayWidth() - BAT_IND_WIDTH)
 
 // FreeRTOS constants
@@ -153,13 +153,15 @@ float unitConversionFactor(e_unitVal from, e_unitVal to);
 SemaphoreHandle_t SPImutex = xSemaphoreCreateMutex();
 portMUX_TYPE measMux = portMUX_INITIALIZER_UNLOCKED;  // Spinlock for measurement data shared with SCPI
 
-// Global variables
-RunningAverage extADCRunAV(EXT_ADC_AVG_SAMPLE_NUM);
-int32_t extADCResultCh0 = 0;
-int32_t extADCResultCh1 = 0;
-int32_t extADCResult = 0;
-float extADCweight = 0.0;
-float extADCweightMax = 0.0;
+// Global variables — per-channel arrays (index 0 = Ch0, 1 = Ch1)
+RunningAverage extADCRunAV[NUM_CHANNELS] = {
+    RunningAverage(EXT_ADC_AVG_SAMPLE_NUM),
+    RunningAverage(EXT_ADC_AVG_SAMPLE_NUM)
+};
+int32_t extADCResultCh[NUM_CHANNELS] = {0, 0};
+int32_t extADCResult = 0;  // combined raw ADC (Ch0+Ch1 or Ch0 only, for power-down detection)
+float extADCweight[NUM_CHANNELS] = {0.0f, 0.0f};
+float extADCweightMax[NUM_CHANNELS] = {0.0f, 0.0f};
 float vinVolts = 0.0;
 float v5vVolts = 0.0;
 
@@ -178,24 +180,24 @@ static inline uint8_t pwmPercentToDuty(uint8_t pct) {
     return (uint8_t)((uint16_t)pct * 255 / 100);
 }
 
-e_unitVal unitVal = DEFAULT_UNIT;
+e_unitVal unitVal[NUM_CHANNELS] = {DEFAULT_UNIT, DEFAULT_UNIT};
 
-float calValue = 7168.220215f; // default global calibration value (429.4967296f results in uV at 5Vexc and 128x gain, 7168.220215f gets close to the dual load cell setup)
-int32_t zeroValue = 0; // default zero value
-float tareValue = 0.0f; // default tare value
-uint32_t calWeight = MIN_CAL_VAL; // default calibration weight
-e_unitVal calUnit = DEFAULT_UNIT; // default calibration unit
+float calValue[NUM_CHANNELS] = {7168.220215f, 7168.220215f};
+int32_t zeroValue[NUM_CHANNELS] = {0, 0};
+float tareValue[NUM_CHANNELS] = {0.0f, 0.0f};
+uint32_t calWeight[NUM_CHANNELS] = {MIN_CAL_VAL, MIN_CAL_VAL};
+e_unitVal calUnit[NUM_CHANNELS] = {DEFAULT_UNIT, DEFAULT_UNIT};
 
 extern const float kgtolbScalar = 2.20462;
 extern const float kgtoNScalar  = 9.80665;
 extern const float NmtolbftScalar = 0.737562;
 const char* const unitAbbr[] = {"kg", "lb", "N", "N\xb7m", "lb\xb7""ft"};
-float stabThreshold   = STAB_THRESH_DEFAULT;
-float overloadCapacity = OVER_CAP_DEFAULT;
-bool adaptiveFilterEnable = ADAPT_FILTER_DEFAULT;
-float adaptiveFilterPct = ADAPT_THRESH_DEFAULT;
-uint32_t adaptiveFilterTimeUs = ADAPT_TIME_DEFAULT;
-bool adcInvert = false;
+float stabThreshold[NUM_CHANNELS] = {STAB_THRESH_DEFAULT, STAB_THRESH_DEFAULT};
+float overloadCapacity[NUM_CHANNELS] = {OVER_CAP_DEFAULT, OVER_CAP_DEFAULT};
+bool adaptiveFilterEnable[NUM_CHANNELS] = {ADAPT_FILTER_DEFAULT, ADAPT_FILTER_DEFAULT};
+float adaptiveFilterPct[NUM_CHANNELS] = {ADAPT_THRESH_DEFAULT, ADAPT_THRESH_DEFAULT};
+uint32_t adaptiveFilterTimeUs[NUM_CHANNELS] = {ADAPT_TIME_DEFAULT, ADAPT_TIME_DEFAULT};
+bool adcInvert[NUM_CHANNELS] = {false, false};
 bool updateLCDWeight = true;
 volatile bool newWeightReady = false;
 bool noActivityPowerDownFlag = false;
@@ -311,10 +313,12 @@ void setup() {
   configSwitch2 = digitalRead(SW_2);
 
   EEPROM.begin(EEPROM_SIZE_BYTES);
+
+  // --- CH0 EEPROM load (existing addresses) ---
   EEPROM.get(EEPROM_ADDR_CAL_VALUE, EEPROMcalValue);
   EEPROM.get(EEPROM_ADDR_ZERO_VALUE, EEPROMZeroValue);
   EEPROM.get(EEPROM_ADDR_BACKLIGHT, EEPROMbacklightEnable);
-  EEPROM.get(EEPROM_ADDR_UNIT_VAL, EEPROMunitVal);  
+  EEPROM.get(EEPROM_ADDR_UNIT_VAL, EEPROMunitVal);
   EEPROM.get(EEPROM_ADDR_CAL_WEIGHT, EEPROMcalWeight);
   EEPROM.get(EEPROM_ADDR_CAL_UNIT, EEPROMcalUnit);
   EEPROM.get(EEPROM_ADDR_WEIGHT_MAX, EEPROMextADCweightMax);
@@ -326,29 +330,29 @@ void setup() {
   // If calValue is a real number, that means we've calibrated the unit and calValue and zeroValue are legitimate values
   if ((!isnan(EEPROMcalValue)) && (EEPROMcalValue>0))
   {
-    calValue = EEPROMcalValue;
-    zeroValue = EEPROMZeroValue;
+    calValue[0] = EEPROMcalValue;
+    zeroValue[0] = EEPROMZeroValue;
   } else { eepromDirty = true; }
   if (EEPROMbacklightEnable >= 0 && EEPROMbacklightEnable <= 2) {
     backlightEnable = EEPROMbacklightEnable;
   } else { eepromDirty = true; }
   if (EEPROMunitVal >= 0 && EEPROMunitVal < UNIT_VAL_COUNT) {
-    unitVal = EEPROMunitVal;
+    unitVal[0] = EEPROMunitVal;
   } else { eepromDirty = true; }
   if (EEPROMcalWeight != 4294967295) {
-    calWeight = EEPROMcalWeight;
+    calWeight[0] = EEPROMcalWeight;
   } else { eepromDirty = true; }
   if (EEPROMcalUnit >= 0 && EEPROMcalUnit < UNIT_VAL_COUNT)
   {
-    calUnit = EEPROMcalUnit;
+    calUnit[0] = EEPROMcalUnit;
   }
   else
   {
-    calUnit = unitVal;
+    calUnit[0] = unitVal[0];
     eepromDirty = true;
   }
   if (!isnan(EEPROMextADCweightMax)) {
-    extADCweightMax = EEPROMextADCweightMax;
+    extADCweightMax[0] = EEPROMextADCweightMax;
   } else { eepromDirty = true; }
 
   uint8_t EEPROMbacklightPWM;
@@ -372,59 +376,131 @@ void setup() {
   float EEPROMstabThresh;
   EEPROM.get(EEPROM_ADDR_STAB_THRESH, EEPROMstabThresh);
   if (!isnan(EEPROMstabThresh) && EEPROMstabThresh > 0) {
-    stabThreshold = EEPROMstabThresh;
+    stabThreshold[0] = EEPROMstabThresh;
   } else { eepromDirty = true; }
 
   float EEPROMoverCap;
   EEPROM.get(EEPROM_ADDR_OVER_CAP, EEPROMoverCap);
   if (!isnan(EEPROMoverCap) && EEPROMoverCap > 0) {
-    overloadCapacity = EEPROMoverCap;
+    overloadCapacity[0] = EEPROMoverCap;
   } else { eepromDirty = true; }
 
   uint8_t EEPROMadaptEnable;
   EEPROM.get(EEPROM_ADDR_ADAPT_ENABLE, EEPROMadaptEnable);
   if (EEPROMadaptEnable <= 1) {
-    adaptiveFilterEnable = (bool) EEPROMadaptEnable;
+    adaptiveFilterEnable[0] = (bool) EEPROMadaptEnable;
   } else { eepromDirty = true; }
 
   float EEPROMadaptThresh;
   EEPROM.get(EEPROM_ADDR_ADAPT_THRESH, EEPROMadaptThresh);
   if (!isnan(EEPROMadaptThresh) && EEPROMadaptThresh > 0) {
-    adaptiveFilterPct = EEPROMadaptThresh;
+    adaptiveFilterPct[0] = EEPROMadaptThresh;
   } else { eepromDirty = true; }
 
   uint32_t EEPROMadaptTime;
   EEPROM.get(EEPROM_ADDR_ADAPT_TIME, EEPROMadaptTime);
   if (EEPROMadaptTime >= 1 && EEPROMadaptTime <= 60000000UL) {
-    adaptiveFilterTimeUs = EEPROMadaptTime;
+    adaptiveFilterTimeUs[0] = EEPROMadaptTime;
   } else { eepromDirty = true; }
 
   uint8_t EEPROMadcInvert;
   EEPROM.get(EEPROM_ADDR_ADC_INVERT, EEPROMadcInvert);
   if (EEPROMadcInvert <= 1) {
-    adcInvert = (bool) EEPROMadcInvert;
+    adcInvert[0] = (bool) EEPROMadcInvert;
   } else { eepromDirty = true; }
 
-  // Write validated defaults back to EEPROM for any uninitialized fields
+  // Write validated CH0 defaults back to EEPROM for any uninitialized fields
   if (eepromDirty) {
-    EEPROM.put(EEPROM_ADDR_CAL_VALUE, calValue);
-    EEPROM.put(EEPROM_ADDR_ZERO_VALUE, zeroValue);
+    EEPROM.put(EEPROM_ADDR_CAL_VALUE, calValue[0]);
+    EEPROM.put(EEPROM_ADDR_ZERO_VALUE, zeroValue[0]);
     EEPROM.put(EEPROM_ADDR_BACKLIGHT, backlightEnable);
-    EEPROM.put(EEPROM_ADDR_UNIT_VAL, unitVal);
-    EEPROM.put(EEPROM_ADDR_CAL_WEIGHT, calWeight);
-    EEPROM.put(EEPROM_ADDR_CAL_UNIT, calUnit);
-    EEPROM.put(EEPROM_ADDR_WEIGHT_MAX, extADCweightMax);
+    EEPROM.put(EEPROM_ADDR_UNIT_VAL, unitVal[0]);
+    EEPROM.put(EEPROM_ADDR_CAL_WEIGHT, calWeight[0]);
+    EEPROM.put(EEPROM_ADDR_CAL_UNIT, calUnit[0]);
+    EEPROM.put(EEPROM_ADDR_WEIGHT_MAX, extADCweightMax[0]);
     EEPROM.put(EEPROM_ADDR_BACKLIGHT_PWM, backlightPWM);
     EEPROM.put(EEPROM_ADDR_ECHO, (uint8_t) scpiEchoEnable);
     EEPROM.put(EEPROM_ADDR_PROMPT, (uint8_t) scpiPromptEnable);
-    EEPROM.put(EEPROM_ADDR_STAB_THRESH, stabThreshold);
-    EEPROM.put(EEPROM_ADDR_OVER_CAP, overloadCapacity);
-    EEPROM.put(EEPROM_ADDR_ADAPT_ENABLE, (uint8_t) adaptiveFilterEnable);
-    EEPROM.put(EEPROM_ADDR_ADAPT_THRESH, adaptiveFilterPct);
-    EEPROM.put(EEPROM_ADDR_ADAPT_TIME, adaptiveFilterTimeUs);
-    EEPROM.put(EEPROM_ADDR_ADC_INVERT, (uint8_t) adcInvert);
+    EEPROM.put(EEPROM_ADDR_STAB_THRESH, stabThreshold[0]);
+    EEPROM.put(EEPROM_ADDR_OVER_CAP, overloadCapacity[0]);
+    EEPROM.put(EEPROM_ADDR_ADAPT_ENABLE, (uint8_t) adaptiveFilterEnable[0]);
+    EEPROM.put(EEPROM_ADDR_ADAPT_THRESH, adaptiveFilterPct[0]);
+    EEPROM.put(EEPROM_ADDR_ADAPT_TIME, adaptiveFilterTimeUs[0]);
+    EEPROM.put(EEPROM_ADDR_ADC_INVERT, (uint8_t) adcInvert[0]);
     EEPROM.commit();
-    DBG_PRINTLN("EEPROM: initialized unset fields with defaults");
+    DBG_PRINTLN("EEPROM: initialized unset CH0 fields with defaults");
+  }
+
+  // --- CH1 EEPROM load ---
+  bool ch1Dirty = false;
+  float ee_ch1CalValue;    EEPROM.get(EEPROM_ADDR_CH1_CAL_VALUE, ee_ch1CalValue);
+  int32_t ee_ch1ZeroValue; EEPROM.get(EEPROM_ADDR_CH1_ZERO_VALUE, ee_ch1ZeroValue);
+  e_unitVal ee_ch1UnitVal; EEPROM.get(EEPROM_ADDR_CH1_UNIT_VAL, ee_ch1UnitVal);
+  uint32_t ee_ch1CalWt;    EEPROM.get(EEPROM_ADDR_CH1_CAL_WEIGHT, ee_ch1CalWt);
+  e_unitVal ee_ch1CalUnit; EEPROM.get(EEPROM_ADDR_CH1_CAL_UNIT, ee_ch1CalUnit);
+  float ee_ch1WtMax;       EEPROM.get(EEPROM_ADDR_CH1_WEIGHT_MAX, ee_ch1WtMax);
+  float ee_ch1OverCap;     EEPROM.get(EEPROM_ADDR_CH1_OVER_CAP, ee_ch1OverCap);
+
+  if (!isnan(ee_ch1CalValue) && ee_ch1CalValue > 0) {
+    calValue[1] = ee_ch1CalValue;
+    zeroValue[1] = ee_ch1ZeroValue;
+  } else { ch1Dirty = true; }
+  if (ee_ch1UnitVal >= 0 && ee_ch1UnitVal < UNIT_VAL_COUNT) {
+    unitVal[1] = ee_ch1UnitVal;
+  } else { ch1Dirty = true; }
+  if (ee_ch1CalWt != 4294967295) {
+    calWeight[1] = ee_ch1CalWt;
+  } else { ch1Dirty = true; }
+  if (ee_ch1CalUnit >= 0 && ee_ch1CalUnit < UNIT_VAL_COUNT) {
+    calUnit[1] = ee_ch1CalUnit;
+  } else { calUnit[1] = unitVal[1]; ch1Dirty = true; }
+  if (!isnan(ee_ch1WtMax)) {
+    extADCweightMax[1] = ee_ch1WtMax;
+  } else { ch1Dirty = true; }
+  if (!isnan(ee_ch1OverCap) && ee_ch1OverCap > 0) {
+    overloadCapacity[1] = ee_ch1OverCap;
+  } else { ch1Dirty = true; }
+
+  float ee_ch1StabThresh;  EEPROM.get(EEPROM_ADDR_CH1_STAB_THRESH, ee_ch1StabThresh);
+  if (!isnan(ee_ch1StabThresh) && ee_ch1StabThresh > 0) {
+    stabThreshold[1] = ee_ch1StabThresh;
+  } else { ch1Dirty = true; }
+
+  uint8_t ee_ch1AdaptEn;   EEPROM.get(EEPROM_ADDR_CH1_ADAPT_ENABLE, ee_ch1AdaptEn);
+  if (ee_ch1AdaptEn <= 1) {
+    adaptiveFilterEnable[1] = (bool) ee_ch1AdaptEn;
+  } else { ch1Dirty = true; }
+
+  float ee_ch1AdaptThresh; EEPROM.get(EEPROM_ADDR_CH1_ADAPT_THRESH, ee_ch1AdaptThresh);
+  if (!isnan(ee_ch1AdaptThresh) && ee_ch1AdaptThresh > 0) {
+    adaptiveFilterPct[1] = ee_ch1AdaptThresh;
+  } else { ch1Dirty = true; }
+
+  uint32_t ee_ch1AdaptTime; EEPROM.get(EEPROM_ADDR_CH1_ADAPT_TIME, ee_ch1AdaptTime);
+  if (ee_ch1AdaptTime >= 1 && ee_ch1AdaptTime <= 60000000UL) {
+    adaptiveFilterTimeUs[1] = ee_ch1AdaptTime;
+  } else { ch1Dirty = true; }
+
+  uint8_t ee_ch1AdcInvert; EEPROM.get(EEPROM_ADDR_CH1_ADC_INVERT, ee_ch1AdcInvert);
+  if (ee_ch1AdcInvert <= 1) {
+    adcInvert[1] = (bool) ee_ch1AdcInvert;
+  } else { ch1Dirty = true; }
+
+  if (ch1Dirty) {
+    EEPROM.put(EEPROM_ADDR_CH1_CAL_VALUE, calValue[1]);
+    EEPROM.put(EEPROM_ADDR_CH1_ZERO_VALUE, zeroValue[1]);
+    EEPROM.put(EEPROM_ADDR_CH1_UNIT_VAL, unitVal[1]);
+    EEPROM.put(EEPROM_ADDR_CH1_CAL_WEIGHT, calWeight[1]);
+    EEPROM.put(EEPROM_ADDR_CH1_CAL_UNIT, calUnit[1]);
+    EEPROM.put(EEPROM_ADDR_CH1_WEIGHT_MAX, extADCweightMax[1]);
+    EEPROM.put(EEPROM_ADDR_CH1_OVER_CAP, overloadCapacity[1]);
+    EEPROM.put(EEPROM_ADDR_CH1_STAB_THRESH, stabThreshold[1]);
+    EEPROM.put(EEPROM_ADDR_CH1_ADAPT_ENABLE, (uint8_t) adaptiveFilterEnable[1]);
+    EEPROM.put(EEPROM_ADDR_CH1_ADAPT_THRESH, adaptiveFilterPct[1]);
+    EEPROM.put(EEPROM_ADDR_CH1_ADAPT_TIME, adaptiveFilterTimeUs[1]);
+    EEPROM.put(EEPROM_ADDR_CH1_ADC_INVERT, (uint8_t) adcInvert[1]);
+    EEPROM.commit();
+    DBG_PRINTLN("EEPROM: initialized unset CH1 fields with defaults");
   }
 
   ledcWrite(LCD_BACKLIGHT, pwmPercentToDuty(backlightPWM) * (backlightEnable != off));
@@ -455,33 +531,16 @@ void setup() {
   DBG_PRINTF("Config Switch1: %d\n\r", configSwitch1);
   DBG_PRINTF("Config Switch2: %d\n\r", configSwitch2);
 
-  DBG_PRINTF("Default calVal: %f\n\r", calValue);
-  DBG_PRINTF("Default zeroVal: %d\n\r", zeroValue);
-  DBG_PRINTF("Default backlightEnable: %d\n\r", backlightEnable);
-  DBG_PRINTF("Default backlightPWM: %d%%\n\r", backlightPWM);
-  DBG_PRINTF("Default unitVal: %d\n\r", unitVal);
-  DBG_PRINTF("Default calWeight: %u\n\r", calWeight);
-  DBG_PRINTF("Default calUnit: %d\n\r", calUnit);
-  
-  DBG_PRINTF("Max EEPROM address: %d\n\r", EEPROM_ADDR_WEIGHT_MAX);
-  DBG_PRINTF("EEPROM calVal: %f\n\r", EEPROMcalValue);
-  DBG_PRINTF("EEPROM zeroVal: %d\n\r", EEPROMZeroValue);  
-  DBG_PRINTF("EEPROM backlightEnable: %d\n\r", EEPROMbacklightEnable);
-  DBG_PRINTF("EEPROM unitVal: %d\n\r", EEPROMunitVal);
-  DBG_PRINTF("EEPROM calWeight: %u\n\r", EEPROMcalWeight);
-  DBG_PRINTF("EEPROM calUnit: %d\n\r", EEPROMcalUnit);
-  DBG_PRINTF("EEPROM extADCweightMax: %f\n\r", EEPROMextADCweightMax);  
-
-  DBG_PRINTF("calVal: %f\n\r", calValue);
-  DBG_PRINTF("zeroVal: %u\n\r", zeroValue);
-  DBG_PRINTF("backlightEnable: %d\n\r", backlightEnable);
-  DBG_PRINTF("unitVal: %d (%s)\n\r", unitVal, unitAbbr[unitVal]);
-  DBG_PRINTF("calWeight: %u\n\r", calWeight);
-  DBG_PRINTF("calUnit: %d (%s)\n\r", calUnit, unitAbbr[calUnit]);
+  for (int c = 0; c < NUM_CHANNELS; c++) {
+    DBG_PRINTF("CH%d calVal: %f  zeroVal: %d  unit: %d (%s)  calWt: %u  calUnit: %d (%s)  max: %f\n\r",
+               c, calValue[c], zeroValue[c], unitVal[c], unitAbbr[unitVal[c]],
+               calWeight[c], calUnit[c], unitAbbr[calUnit[c]], extADCweightMax[c]);
+  }
+  DBG_PRINTF("backlightEnable: %d  backlightPWM: %d%%\n\r", backlightEnable, backlightPWM);
 
   // Initialize external ADC
 
-  extADCRunAV.clear();  //   explicitly start our running average buffer clean
+  for (int c = 0; c < NUM_CHANNELS; c++) extADCRunAV[c].clear();
 
   // SPI bus already initialized above — configure ADC SPI settings
   AD7193.setSPIFrequency(SPI_FREQ);
@@ -501,22 +560,25 @@ void setup() {
     AD7193.channelSelect(AD7193_CH_0);
 
     delay(EXT_ANALOG_READ_TASK_DELAY);
-    extADCResultCh0 = AD7193.singleConversion();
+    extADCResultCh[0] = AD7193.singleConversion();
 
-    DBG_PRINTF("ADC Ch0: %d\n", extADCResultCh0);
+    DBG_PRINTF("ADC Ch0: %d\n", extADCResultCh[0]);
     AD7193.channelSelect(AD7193_CH_1);
     delay(EXT_ANALOG_READ_TASK_DELAY);
-    extADCResultCh1 = AD7193.singleConversion();
-    DBG_PRINTF("ADC Ch1: %d\n", extADCResultCh1);
+    extADCResultCh[1] = AD7193.singleConversion();
+    DBG_PRINTF("ADC Ch1: %d\n", extADCResultCh[1]);
 
-    AD7193.channelSelect(AD7193_CH_0);  // Set the ADC back to Ch0 to get ready for the ADC read task
+    AD7193.channelSelect(AD7193_CH_0);
 
-    // If DIP switch 1 is off (logic high), then scale is configured for single channel.  Otherwise use both channels.
-    if (adcInvert) { extADCResultCh0 = -extADCResultCh0; extADCResultCh1 = -extADCResultCh1; }
-    if(configSwitch1) extADCResult = extADCResultCh0; else extADCResult = extADCResultCh0 + extADCResultCh1;
+    if (adcInvert[0]) { extADCResultCh[0] = -extADCResultCh[0]; }
+    if (adcInvert[1]) { extADCResultCh[1] = -extADCResultCh[1]; }
+    extADCResult = extADCResultCh[0] + extADCResultCh[1];
 
-    tareValue = (extADCResult - zeroValue)/calValue;
-    DBG_PRINTF("Tare Value: %f\n", tareValue);
+    // Auto-tare both channels at boot
+    for (int c = 0; c < NUM_CHANNELS; c++) {
+      tareValue[c] = (calValue[c] != 0.0f) ? (extADCResultCh[c] - zeroValue[c]) / calValue[c] : 0.0f;
+      DBG_PRINTF("CH%d Tare Value: %f\n", c, tareValue[c]);
+    }
   }
   
 
@@ -625,12 +687,14 @@ void TaskUI(void *pvParameters)
     // Check power button flag
     if (powerButtonFlag == short_press_flag)
     {
-      // Do zero routine
+      // Do zero routine — tare all channels
       DBG_PRINTF("Zero scale flag set.\n");
       powerButtonFlag = no_press_flag;
-      tareValue = (extADCResult - zeroValue)/calValue;
-      extADCRunAV.clear();
-      DBG_PRINTF("Tare Value: %f\n", tareValue);
+      for (int c = 0; c < NUM_CHANNELS; c++) {
+        tareValue[c] = (calValue[c] != 0.0f) ? (extADCResultCh[c] - zeroValue[c]) / calValue[c] : 0.0f;
+        extADCRunAV[c].clear();
+        DBG_PRINTF("CH%d Tare Value: %f\n", c, tareValue[c]);
+      }
     }
     else if (powerButtonFlag == long_press_flag && bklButtonStat == no_press && unitButtonStat == no_press)
     {
@@ -644,16 +708,17 @@ void TaskUI(void *pvParameters)
     // Check unit button flag
     if (unitButtonFlag == short_press_flag)
     {
-      // Change units — cycle through all units, convert capacity/peak within same type
+      // Change units — cycle all channels together
       DBG_PRINTF("Change unit flag set.\n");
       unitButtonFlag = no_press_flag;
-      e_unitVal oldUnit = unitVal;
-      unitVal = (e_unitVal)((unitVal + 1) % UNIT_VAL_COUNT);
-      // Convert overloadCapacity and peak weight between compatible units
-      float convFactor = unitConversionFactor(oldUnit, unitVal);
-      overloadCapacity *= convFactor;
-      extADCweightMax *= convFactor;
-      extADCRunAV.clear();
+      for (int c = 0; c < NUM_CHANNELS; c++) {
+        e_unitVal oldUnit = unitVal[c];
+        unitVal[c] = (e_unitVal)((unitVal[c] + 1) % UNIT_VAL_COUNT);
+        float convFactor = unitConversionFactor(oldUnit, unitVal[c]);
+        overloadCapacity[c] *= convFactor;
+        extADCweightMax[c] *= convFactor;
+        extADCRunAV[c].clear();
+      }
     }
     else if (unitButtonFlag == long_press_flag)
     {
@@ -737,21 +802,21 @@ void TaskExtAnalogRead(void *pvParameters)
   ( void ) pvParameters;
   TickType_t xLastWakeTime = xTaskGetTickCount ();
   static uint32_t msAtLastWeightChange = millis();  // Power-down timer (reset on >1 lb change)
-  static float lastExtADCweight = 0;
+  static float lastExtADCweight[NUM_CHANNELS] = {0, 0};
   static float weightChangeLB = 0;
   static int32_t lastExtADCResultRaw = 0;
-  static uint32_t adaptiveStartUs = 0;   // Adaptive filter: timestamp of first deviation
-  static bool adaptiveLastAbove = false; // Adaptive filter: last deviation direction
-  static bool adaptiveTracking = false;  // Adaptive filter: currently tracking a deviation
+  // Per-channel adaptive filter state
+  static uint32_t adaptiveStartUs[NUM_CHANNELS] = {0, 0};
+  static bool adaptiveLastAbove[NUM_CHANNELS] = {false, false};
+  static bool adaptiveTracking[NUM_CHANNELS] = {false, false};
   msAtLastIdleActivity = millis();  // Initialize idle timer
 
   xTaskDelayUntil(&xLastWakeTime, EXT_ANALOG_READ_TASK_DELAY/portTICK_PERIOD_MS);
 
   for (;;){ // A Task shall never return or exit.
-    lastExtADCweight = extADCweight;
+    for (int c = 0; c < NUM_CHANNELS; c++) lastExtADCweight[c] = extADCweight[c];
 
     // --- Ch0 read (mutex held only during SPI transaction) ---
-    // AD7193 library manages its own beginTransaction/endTransaction internally
     xSemaphoreTake(SPImutex, portMAX_DELAY);
     int32_t ch0 = AD7193.singleConversion();
     AD7193.channelSelect(AD7193_CH_1);
@@ -766,60 +831,67 @@ void TaskExtAnalogRead(void *pvParameters)
     AD7193.channelSelect(AD7193_CH_0);
     xSemaphoreGive(SPImutex);
 
-    // Apply polarity inversion to locals before writing globals
-    // (prevents SCPI queries from seeing un-negated values during the delay)
-    if (adcInvert) { ch0 = -ch0; ch1 = -ch1; }
-    extADCResultCh0 = ch0;
-    extADCResultCh1 = ch1;
-    if(configSwitch1) extADCResult = ch0; else extADCResult = ch0 + ch1;
-    extADCweight = (calValue != 0.0f) ? (extADCResult - zeroValue)/calValue - tareValue : 0.0f;
-    extADCweight *= unitConversionFactor(calUnit, unitVal);
-    extADCweight = removeNegativeSignFromZero(extADCweight);
-    // DBG_PRINTF("extADCweight: %f\n", extADCweight);
+    // Apply per-channel polarity inversion to locals before writing globals
+    if (adcInvert[0]) { ch0 = -ch0; }
+    if (adcInvert[1]) { ch1 = -ch1; }
+    extADCResultCh[0] = ch0;
+    extADCResultCh[1] = ch1;
+    extADCResult = ch0 + ch1;  // combined raw for power-down detection
+
+    // Per-channel weight computation
+    for (int c = 0; c < NUM_CHANNELS; c++) {
+      extADCweight[c] = (calValue[c] != 0.0f)
+          ? (extADCResultCh[c] - zeroValue[c]) / calValue[c] - tareValue[c]
+          : 0.0f;
+      extADCweight[c] *= unitConversionFactor(calUnit[c], unitVal[c]);
+      extADCweight[c] = removeNegativeSignFromZero(extADCweight[c]);
+    }
 
     // Update shared measurement data (synchronized with SCPI reads)
     taskENTER_CRITICAL(&measMux);
-    if (fabsf(extADCweight) > fabsf(extADCweightMax))
-    {
-      extADCweightMax = extADCweight;
-    }
-    // Adaptive filter: clear average on sustained directional change
-    if (adaptiveFilterEnable && extADCRunAV.getCount() > 0) {
-      float avg = extADCRunAV.getAverage();
-      float thresh = overloadCapacity * adaptiveFilterPct / 100.0f;
-      float delta = extADCweight - avg;
-      uint32_t nowUs = micros();
-      if (thresh > 0.0f && fabsf(delta) > thresh) {
-        bool above = (delta > 0.0f);
-        if (!adaptiveTracking || above != adaptiveLastAbove) {
-          adaptiveStartUs = nowUs;
-          adaptiveLastAbove = above;
-          adaptiveTracking = true;
-        } else if ((nowUs - adaptiveStartUs) >= adaptiveFilterTimeUs) {
-          extADCRunAV.clear();
-          adaptiveTracking = false;
+    for (int c = 0; c < NUM_CHANNELS; c++) {
+      if (fabsf(extADCweight[c]) > fabsf(extADCweightMax[c]))
+      {
+        extADCweightMax[c] = extADCweight[c];
+      }
+      // Adaptive filter per channel: clear average on sustained directional change
+      if (adaptiveFilterEnable[c] && extADCRunAV[c].getCount() > 0) {
+        float avg = extADCRunAV[c].getAverage();
+        float thresh = overloadCapacity[c] * adaptiveFilterPct[c] / 100.0f;
+        float delta = extADCweight[c] - avg;
+        uint32_t nowUs = micros();
+        if (thresh > 0.0f && fabsf(delta) > thresh) {
+          bool above = (delta > 0.0f);
+          if (!adaptiveTracking[c] || above != adaptiveLastAbove[c]) {
+            adaptiveStartUs[c] = nowUs;
+            adaptiveLastAbove[c] = above;
+            adaptiveTracking[c] = true;
+          } else if ((nowUs - adaptiveStartUs[c]) >= adaptiveFilterTimeUs[c]) {
+            extADCRunAV[c].clear();
+            adaptiveTracking[c] = false;
+          }
+        } else {
+          adaptiveTracking[c] = false;
         }
       } else {
-        adaptiveTracking = false;
+        adaptiveTracking[c] = false;
       }
-    } else {
-      adaptiveTracking = false;
+      extADCRunAV[c].add(extADCweight[c]);
     }
-    extADCRunAV.add(extADCweight);
     taskEXIT_CRITICAL(&measMux);
 
     // Signal UI task that new weight data is available
     newWeightReady = true;
 
-    // Compute weight and ADC changes
+    // Compute weight and ADC changes (use ch0 for power-down/idle detection)
     int32_t adcChange = abs(extADCResult - lastExtADCResultRaw);
     lastExtADCResultRaw = extADCResult;
-    weightChangeLB = abs(lastExtADCweight - extADCweight);
+    weightChangeLB = abs(lastExtADCweight[0] - extADCweight[0]);
     // Convert weight change to lb for power-down/idle threshold comparison
-    weightChangeLB *= unitConversionFactor(unitVal, lb);
+    weightChangeLB *= unitConversionFactor(unitVal[0], lb);
 
     // --- Power-down activity detection (original thresholds) ---
-    bool powerDownActivity = (calValue != 0.0f)
+    bool powerDownActivity = (calValue[0] != 0.0f)
       ? (weightChangeLB > NO_ACTIVITY_WEIGHT_RANGE_LB)
       : (adcChange > NO_ACTIVITY_ADC_COUNTS);
     if(powerDownActivity) {
@@ -840,10 +912,10 @@ void TaskExtAnalogRead(void *pvParameters)
     // --- Idle mode activity detection (sensitive threshold: % of full scale) ---
     // Derive full-scale capacity from ADC range and calibration factor
     // (calWeight is just the reference weight, not the scale's capacity)
-    float fullScaleWeight = (float)ADC_FULL_SCALE / calValue;  // in calUnit
-    float idleThresholdLB = fullScaleWeight * unitConversionFactor(calUnit, lb) * IDLE_ACTIVITY_PCT / 100.0f;
+    float fullScaleWeight = (float)ADC_FULL_SCALE / calValue[0];  // in calUnit[0]
+    float idleThresholdLB = fullScaleWeight * unitConversionFactor(calUnit[0], lb) * IDLE_ACTIVITY_PCT / 100.0f;
     int32_t idleThresholdADC = (int32_t)((float)ADC_FULL_SCALE * IDLE_ACTIVITY_PCT / 100.0f);
-    bool idleActivity = (calValue != 0.0f)
+    bool idleActivity = (calValue[0] != 0.0f)
       ? (weightChangeLB > idleThresholdLB)
       : (adcChange > idleThresholdADC);
     if(idleActivity) {
@@ -1061,43 +1133,73 @@ void TaskBKLButton(void *pvParameters)
   }
 }
 
+// Dual-scale display fonts
+#define DUAL_WVAL_FONT u8g2_font_inb16_mn   // Smaller weight font for split display
+#define DUAL_UNIT_FONT u8g2_font_6x12_mr    // Smaller unit font for split display
+#define DUAL_LABEL_FONT u8g2_font_4x6_mr    // Tiny label font for channel labels
+
 void UpdateWeightReadingLCD()
 {
   if(updateLCDWeight)
   {
-    String s_extADCweight;
-
-    //char vBuffer[7];
-    //dtostrf(extADCweight,5,2, vBuffer);  // Cannot use printf with floats with small task sizes (<2048) - so do this instead
-    //DBG_PRINTF("ExtADC: %s\n", vBuffer);
-
     u8g2.clearBuffer();
-    u8g2.setFont(WVAL_FONT);
-    s_extADCweight = String(extADCRunAV.getAverage(), WVAL_DEC_PLS);
-    // Split string at the decimal point because display looks strange with large decimal point spacing
 
-    // Print decimal point first
-    u8g2.setCursor(WVAL_X_POS-u8g2.getStrWidth(s_extADCweight.substring(s_extADCweight.length()-WVAL_DEC_PLS).c_str())-DEC_PT_S_PX+((DEC_PT_S_PX-DEC_PT_W_PX)/2)-DEC_PT_W_PX-1, WVAL_Y_POS);
-    u8g2.print(".");
+    if (configSwitch1) {
+      // --- Single channel mode (SW1=ON): original layout, Ch0 only ---
+      u8g2.setFont(WVAL_FONT);
+      String s_w = String(extADCRunAV[0].getAverage(), WVAL_DEC_PLS);
+      u8g2.setCursor(WVAL_X_POS-u8g2.getStrWidth(s_w.substring(s_w.length()-WVAL_DEC_PLS).c_str())-DEC_PT_S_PX+((DEC_PT_S_PX-DEC_PT_W_PX)/2)-DEC_PT_W_PX-1, WVAL_Y_POS);
+      u8g2.print(".");
+      u8g2.setCursor(WVAL_X_POS-u8g2.getStrWidth((s_w.c_str()+1))-DEC_PT_S_PX, WVAL_Y_POS);
+      u8g2.print(s_w.substring(0, s_w.length()-WVAL_DEC_PLS-1).c_str());
+      u8g2.setCursor(WVAL_X_POS-u8g2.getStrWidth(s_w.substring(s_w.length()-WVAL_DEC_PLS).c_str()), WVAL_Y_POS);
+      u8g2.print(s_w.substring(s_w.length()-WVAL_DEC_PLS).c_str());
 
-    // Print numbers left of the deicmal place
-    u8g2.setCursor(WVAL_X_POS-u8g2.getStrWidth((s_extADCweight.c_str()+1))-DEC_PT_S_PX, WVAL_Y_POS);
-    u8g2.print(s_extADCweight.substring(0, s_extADCweight.length()-WVAL_DEC_PLS-1).c_str());  
-    
-    // Print numbers right of the decimal place
-    u8g2.setCursor(WVAL_X_POS-u8g2.getStrWidth(s_extADCweight.substring(s_extADCweight.length()-WVAL_DEC_PLS).c_str()), WVAL_Y_POS);
-    u8g2.print(s_extADCweight.substring(s_extADCweight.length()-WVAL_DEC_PLS).c_str());
+      u8g2.setFont(UNIT_FONT);
+      e_unitVal uSnap = unitVal[0];
+      const char *uStr = ((int)uSnap >= 0 && (int)uSnap < UNIT_VAL_COUNT)
+          ? unitAbbr[uSnap] : "?";
+      u8g2.setCursor(u8g2.getDisplayWidth() - u8g2.getStrWidth(uStr), UNIT_Y_POS);
+      u8g2.print(uStr);
+    } else {
+      // --- Dual channel mode (SW1=OFF): split display ---
+      // Layout: Ch0 top half (y=0..31), Ch1 bottom half (y=32..63)
+      for (int c = 0; c < NUM_CHANNELS; c++) {
+        int yBase = c * 32;  // 0 for Ch0, 32 for Ch1
 
-    u8g2.setFont(UNIT_FONT);
-    e_unitVal unitSnap = unitVal;
-    const char *uStr = ((int)unitSnap >= 0 && (int)unitSnap < UNIT_VAL_COUNT)
-        ? unitAbbr[unitSnap] : "?";
-    u8g2.setCursor(u8g2.getDisplayWidth() - u8g2.getStrWidth(uStr), UNIT_Y_POS);
-    u8g2.print(uStr);
+        // Channel label
+        u8g2.setFont(DUAL_LABEL_FONT);
+        char label[4];
+        snprintf(label, sizeof(label), "C%d", c);
+        u8g2.setCursor(0, yBase + 7);
+        u8g2.print(label);
 
-    // Print battery indicator
+        // Weight value — right-aligned
+        u8g2.setFont(DUAL_WVAL_FONT);
+        char wBuf[12];
+        float avg = extADCRunAV[c].getAverage();
+        dtostrf(avg, 7, WVAL_DEC_PLS, wBuf);
+        int wWidth = u8g2.getStrWidth(wBuf);
+        // Leave room for unit label on the right
+        u8g2.setCursor(96 - wWidth, yBase + 22);
+        u8g2.print(wBuf);
+
+        // Unit label
+        u8g2.setFont(DUAL_UNIT_FONT);
+        e_unitVal uSnap = unitVal[c];
+        const char *uStr = ((int)uSnap >= 0 && (int)uSnap < UNIT_VAL_COUNT)
+            ? unitAbbr[uSnap] : "?";
+        u8g2.setCursor(128 - u8g2.getStrWidth(uStr), yBase + 22);
+        u8g2.print(uStr);
+      }
+
+      // Divider line between channels
+      u8g2.drawHLine(0, 31, 128);
+    }
+
+    // Print battery indicator (always visible, top-right)
     u8g2.drawFrame(BAT_IND_X_POS, BAT_IND_Y_POS, BAT_IND_WIDTH - BAT_BUMP_WIDTH, BAT_IND_HEIGHT);
-    u8g2.drawFrame(BAT_IND_X_POS + BAT_IND_WIDTH - BAT_BUMP_WIDTH, BAT_IND_Y_POS + BAT_IND_HEIGHT/2 - BAT_BUMP_HEIGHT/2, BAT_IND_X_POS - BAT_BUMP_WIDTH, BAT_BUMP_WIDTH);  
+    u8g2.drawFrame(BAT_IND_X_POS + BAT_IND_WIDTH - BAT_BUMP_WIDTH, BAT_IND_Y_POS + BAT_IND_HEIGHT/2 - BAT_BUMP_HEIGHT/2, BAT_IND_X_POS - BAT_BUMP_WIDTH, BAT_BUMP_WIDTH);
     u8g2.drawBox(BAT_IND_X_POS, BAT_IND_Y_POS, convertBattVtoBarPx(vinVolts), BAT_IND_HEIGHT);
 
     sendBufferSPISafe();
@@ -1165,13 +1267,13 @@ void doCalibration()
   powerButtonFlag = no_press_flag;
   unitButtonFlag = no_press_flag;  
 
-  // Set calibration units
-  calUnit = unitVal;
+  // Set calibration units (shared across both channels)
+  e_unitVal selCalUnit = unitVal[0];
   u8g2.clearBuffer();
   u8g2.setCursor(0, USER_MSG_Y_POS);
-  u8g2.print("Press UNIT to select"); 
+  u8g2.print("Press UNIT to select");
   u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
-  u8g2.printf("calibration units: %s", unitAbbr[calUnit]);
+  u8g2.printf("calibration units: %s", unitAbbr[selCalUnit]);
   u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT * 2);
   u8g2.print("Press ZERO to cont.");
   sendBufferSPISafe();
@@ -1191,9 +1293,9 @@ void doCalibration()
       // Change cal units
       DBG_PRINTF("Change cal unit flag set.\n");
       unitButtonFlag = no_press_flag;
-      calUnit = (e_unitVal)((calUnit + 1) % UNIT_VAL_COUNT);
+      selCalUnit = (e_unitVal)((selCalUnit + 1) % UNIT_VAL_COUNT);
       u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
-      u8g2.printf("calibration units: %-4s", unitAbbr[calUnit]);
+      u8g2.printf("calibration units: %-4s", unitAbbr[selCalUnit]);
       sendBufferSPISafe();
     }
 
@@ -1203,7 +1305,8 @@ void doCalibration()
   // Reset button flag
   powerButtonFlag = no_press_flag;
 
-  // Set calibration weight
+  // Set calibration weight (shared for both channels)
+  uint32_t selCalWeight = calWeight[0];
   u8g2.clearBuffer();
   u8g2.setCursor(0, USER_MSG_Y_POS);
   u8g2.print("Press ");
@@ -1213,8 +1316,8 @@ void doCalibration()
   u8g2.drawGlyph(u8g2.getCursorX(), u8g2.getCursorY(), 0x25e1);   // Down arrow
   u8g2.setCursor (u8g2.getCursorX() + u8g2.getMaxCharWidth(), u8g2.getCursorY());
   u8g2.print(" to set");
-  u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);  
-  u8g2.printf("cal. weight: %5u %s", calWeight, unitAbbr[calUnit]);
+  u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
+  u8g2.printf("cal. weight: %5u %s", selCalWeight, unitAbbr[selCalUnit]);
   u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT * 2);
   u8g2.print("Press ZERO to cont.");
   sendBufferSPISafe();
@@ -1226,40 +1329,44 @@ void doCalibration()
     {
       if (bklButtonStat == long_press)
       {
-        // User is holding down the button
-        if (calWeight < (MAX_CAL_VAL-10)) calWeight += 10;
-        else calWeight = MAX_CAL_VAL;
+        if (selCalWeight < (MAX_CAL_VAL-10)) selCalWeight += 10;
+        else selCalWeight = MAX_CAL_VAL;
       }
       else
       {
-        if (calWeight < (MAX_CAL_VAL)) calWeight ++;
-      } 
-      u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);  
-      u8g2.printf("cal. weight: %5u %s", calWeight, unitAbbr[calUnit]); 
+        if (selCalWeight < (MAX_CAL_VAL)) selCalWeight ++;
+      }
+      u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
+      u8g2.printf("cal. weight: %5u %s", selCalWeight, unitAbbr[selCalUnit]);
       sendBufferSPISafe();
-    } 
+    }
     if (unitButtonStat)
     {
       if (unitButtonStat == long_press)
       {
-        // User is holding down the button
-        if (calWeight > (MIN_CAL_VAL + 10)) calWeight -= 10;
-        else calWeight = MIN_CAL_VAL;
+        if (selCalWeight > (MIN_CAL_VAL + 10)) selCalWeight -= 10;
+        else selCalWeight = MIN_CAL_VAL;
       }
       else
       {
-        if (calWeight > MIN_CAL_VAL) calWeight --;
-      } 
-      u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);  
-      u8g2.printf("cal. weight: %5u %s", calWeight, unitAbbr[calUnit]); 
+        if (selCalWeight > MIN_CAL_VAL) selCalWeight --;
+      }
+      u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
+      u8g2.printf("cal. weight: %5u %s", selCalWeight, unitAbbr[selCalUnit]);
       sendBufferSPISafe();
     }
     vTaskDelay(150/portTICK_PERIOD_MS);
   }
 
-  // Commit calWeight and calUnit to EEPROM
-  EEPROM.put(EEPROM_ADDR_CAL_WEIGHT, calWeight);
-  EEPROM.put(EEPROM_ADDR_CAL_UNIT, calUnit);  
+  // Apply calWeight and calUnit to both channels and commit
+  for (int c = 0; c < NUM_CHANNELS; c++) {
+    calWeight[c] = selCalWeight;
+    calUnit[c] = selCalUnit;
+  }
+  EEPROM.put(EEPROM_ADDR_CAL_WEIGHT, calWeight[0]);
+  EEPROM.put(EEPROM_ADDR_CAL_UNIT, calUnit[0]);
+  EEPROM.put(EEPROM_ADDR_CH1_CAL_WEIGHT, calWeight[1]);
+  EEPROM.put(EEPROM_ADDR_CH1_CAL_UNIT, calUnit[1]);
   EEPROM.commit();
 
   // Reset button flags
@@ -1284,104 +1391,82 @@ void doCalibration()
   powerButtonFlag = no_press_flag;
   unitButtonFlag = no_press_flag;
 
-  extADCRunAV.clear();
-  u8g2.clearBuffer();
-  u8g2.setCursor(0, USER_MSG_Y_POS);
-  u8g2.print("--Scale Calibration--");  
-  u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
-  u8g2.printf("Wait.");
-  sendBufferSPISafe();
-  vTaskDelay(1000/portTICK_PERIOD_MS);
-  u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
-  u8g2.printf("Wait..");
-  sendBufferSPISafe();
-  vTaskDelay(1000/portTICK_PERIOD_MS);
-  u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
-  u8g2.printf("Wait...");
-  sendBufferSPISafe();
-  vTaskDelay(1000/portTICK_PERIOD_MS);
-  u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
-  u8g2.printf("Wait....");  
-  sendBufferSPISafe();
-  vTaskDelay(1000/portTICK_PERIOD_MS);
-  u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
-  u8g2.printf("Wait.....");   
-  sendBufferSPISafe();
-  vTaskDelay(1000/portTICK_PERIOD_MS);
+  // --- Per-channel calibration (zero then span for each channel) ---
+  for (int c = 0; c < NUM_CHANNELS; c++) {
+    for (int cc = 0; cc < NUM_CHANNELS; cc++) extADCRunAV[cc].clear();
 
-  // Store zero
-  zeroValue = extADCResult;
+    // Zero capture
+    u8g2.clearBuffer();
+    u8g2.setCursor(0, USER_MSG_Y_POS);
+    u8g2.printf("--Cal CH%d: Zero--", c);
+    u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
+    u8g2.print("Unload scale then");
+    u8g2.setCursor(0, USER_MSG_Y_POS + 2 * USER_MSG_Y_LINE_HEIGHT);
+    u8g2.print("press ZERO.");
+    sendBufferSPISafe();
+    while (powerButtonFlag == no_press_flag) { vTaskDelay(DEBOUNCE_TIME/portTICK_PERIOD_MS); }
+    powerButtonFlag = no_press_flag;
+    unitButtonFlag = no_press_flag;
 
-  u8g2.clearBuffer();
-  u8g2.setCursor(0, USER_MSG_Y_POS);
-  u8g2.print("--Scale Calibration--");
-  u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);  
-  u8g2.printf("Load %d %s then press", calWeight, unitAbbr[calUnit]);
-  u8g2.setCursor(0, USER_MSG_Y_POS + 2 * USER_MSG_Y_LINE_HEIGHT);
-  u8g2.print("ZERO.");
-  sendBufferSPISafe();
-  while (powerButtonFlag == no_press_flag)
-  {
-    vTaskDelay(DEBOUNCE_TIME/portTICK_PERIOD_MS);
+    u8g2.clearBuffer();
+    u8g2.setCursor(0, USER_MSG_Y_POS);
+    u8g2.printf("--Cal CH%d: Zero--", c);
+    u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
+    u8g2.print("Wait...");
+    sendBufferSPISafe();
+    vTaskDelay(5000/portTICK_PERIOD_MS);
+
+    zeroValue[c] = extADCResultCh[c];
+
+    // Span capture
+    u8g2.clearBuffer();
+    u8g2.setCursor(0, USER_MSG_Y_POS);
+    u8g2.printf("--Cal CH%d: Span--", c);
+    u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
+    u8g2.printf("Load %u %s then press", selCalWeight, unitAbbr[selCalUnit]);
+    u8g2.setCursor(0, USER_MSG_Y_POS + 2 * USER_MSG_Y_LINE_HEIGHT);
+    u8g2.print("ZERO.");
+    sendBufferSPISafe();
+    while (powerButtonFlag == no_press_flag) { vTaskDelay(DEBOUNCE_TIME/portTICK_PERIOD_MS); }
+    powerButtonFlag = no_press_flag;
+    unitButtonFlag = no_press_flag;
+
+    u8g2.clearBuffer();
+    u8g2.setCursor(0, USER_MSG_Y_POS);
+    u8g2.printf("--Cal CH%d: Span--", c);
+    u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
+    u8g2.print("Wait...");
+    sendBufferSPISafe();
+    vTaskDelay(5000/portTICK_PERIOD_MS);
+
+    calValue[c] = ((float)extADCResultCh[c] - (float)zeroValue[c]) / (float)selCalWeight;
+
+    DBG_PRINTF("CH%d: adc=%d zero=%d calVal=%f\n", c, extADCResultCh[c], zeroValue[c], calValue[c]);
   }
 
-  // Reset button flags
-  powerButtonFlag = no_press_flag;
-  unitButtonFlag = no_press_flag;
-  
-  extADCRunAV.clear();
+  // Show results
   u8g2.clearBuffer();
   u8g2.setCursor(0, USER_MSG_Y_POS);
-  u8g2.print("--Scale Calibration--");  
+  u8g2.print("Cal done. Press ZERO.");
   u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
-  u8g2.printf("Wait.");
+  u8g2.printf("C0: %.2f  C1: %.2f", calValue[0], calValue[1]);
   sendBufferSPISafe();
-  vTaskDelay(1000/portTICK_PERIOD_MS);
-  u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
-  u8g2.printf("Wait..");
-  sendBufferSPISafe();
-  vTaskDelay(1000/portTICK_PERIOD_MS);
-  u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
-  u8g2.printf("Wait...");
-  sendBufferSPISafe();
-  vTaskDelay(1000/portTICK_PERIOD_MS);
-  u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
-  u8g2.printf("Wait....");  
-  sendBufferSPISafe();
-  vTaskDelay(1000/portTICK_PERIOD_MS);
-  u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);
-  u8g2.printf("Wait....."); 
-  sendBufferSPISafe();
-  vTaskDelay(1000/portTICK_PERIOD_MS);
+  while (powerButtonFlag == no_press_flag) { vTaskDelay(DEBOUNCE_TIME/portTICK_PERIOD_MS); }
 
-  // Store span
-  calValue = ((float)extADCResult - (float)zeroValue)/(float)calWeight;  
+  for (int c = 0; c < NUM_CHANNELS; c++) {
+    extADCRunAV[c].clear();
+    tareValue[c] = 0;
+  }
 
-  DBG_PRINTF("extADCResult: %d\n", extADCResult);
-  DBG_PRINTF("zeroValue: %d\n", zeroValue);
-  DBG_PRINTF("calWeight: %u\n", calWeight);
-  DBG_PRINTF("calValue: %f\n", calValue);
-  DBG_PRINTF("calUnit: %s\n", unitAbbr[calUnit]);  
-
-  u8g2.clearBuffer();
-  u8g2.setCursor(0, USER_MSG_Y_POS);
-  u8g2.print("Cal done. Press ZERO.");  
-  u8g2.setCursor(0, USER_MSG_Y_POS + USER_MSG_Y_LINE_HEIGHT);  
-  u8g2.printf("Zero: %d\n\r", zeroValue);
-  u8g2.setCursor(0, USER_MSG_Y_POS + 2 * USER_MSG_Y_LINE_HEIGHT);
-  u8g2.printf("Span: %f\n\r", calValue);  
-  sendBufferSPISafe();
-  while (powerButtonFlag == no_press_flag)
-  {
-    vTaskDelay(DEBOUNCE_TIME/portTICK_PERIOD_MS);
-  }  
-
-  extADCRunAV.clear();
-  // Newly calibrated scale - do not need tare
-  tareValue = 0;
-  EEPROM.put(EEPROM_ADDR_CAL_VALUE, calValue);
-  EEPROM.put(EEPROM_ADDR_CAL_UNIT, calUnit);
-  EEPROM.put(EEPROM_ADDR_ZERO_VALUE, zeroValue);
+  // Persist both channels
+  EEPROM.put(EEPROM_ADDR_CAL_VALUE, calValue[0]);
+  EEPROM.put(EEPROM_ADDR_ZERO_VALUE, zeroValue[0]);
+  EEPROM.put(EEPROM_ADDR_CAL_UNIT, calUnit[0]);
+  EEPROM.put(EEPROM_ADDR_CAL_WEIGHT, calWeight[0]);
+  EEPROM.put(EEPROM_ADDR_CH1_CAL_VALUE, calValue[1]);
+  EEPROM.put(EEPROM_ADDR_CH1_ZERO_VALUE, zeroValue[1]);
+  EEPROM.put(EEPROM_ADDR_CH1_CAL_UNIT, calUnit[1]);
+  EEPROM.put(EEPROM_ADDR_CH1_CAL_WEIGHT, calWeight[1]);
   EEPROM.commit();
 
   // Reset button flags
@@ -1402,58 +1487,36 @@ void sendBufferSPISafe(void)
 
 void powerDown(void)
 {
-  e_backlightEnable EEPROMbacklightEnable;
-  e_unitVal EEPROMunitVal;
-  float EEPROMextADCweightMax;
-  uint8_t EEPROMbacklightPWM;
+  // Persist CH0 per-channel data
+  EEPROM.put(EEPROM_ADDR_UNIT_VAL, unitVal[0]);
+  EEPROM.put(EEPROM_ADDR_WEIGHT_MAX, extADCweightMax[0]);
+  EEPROM.put(EEPROM_ADDR_OVER_CAP, overloadCapacity[0]);
 
-  // Check EEPROM values and update if necessary
-  EEPROM.get(EEPROM_ADDR_BACKLIGHT, EEPROMbacklightEnable);
-  EEPROM.get(EEPROM_ADDR_UNIT_VAL, EEPROMunitVal);
-  EEPROM.get(EEPROM_ADDR_WEIGHT_MAX, EEPROMextADCweightMax);
-  EEPROM.get(EEPROM_ADDR_BACKLIGHT_PWM, EEPROMbacklightPWM);
+  // Persist CH1 per-channel data
+  EEPROM.put(EEPROM_ADDR_CH1_UNIT_VAL, unitVal[1]);
+  EEPROM.put(EEPROM_ADDR_CH1_WEIGHT_MAX, extADCweightMax[1]);
+  EEPROM.put(EEPROM_ADDR_CH1_OVER_CAP, overloadCapacity[1]);
 
-  if(EEPROMunitVal != unitVal) EEPROM.put(EEPROM_ADDR_UNIT_VAL, unitVal);
-  if(EEPROMbacklightEnable != backlightEnable) EEPROM.put(EEPROM_ADDR_BACKLIGHT, backlightEnable);
-  if(EEPROMbacklightPWM != backlightPWM) EEPROM.put(EEPROM_ADDR_BACKLIGHT_PWM, backlightPWM);
+  // Persist shared settings
+  EEPROM.put(EEPROM_ADDR_BACKLIGHT, backlightEnable);
+  EEPROM.put(EEPROM_ADDR_BACKLIGHT_PWM, backlightPWM);
+  EEPROM.put(EEPROM_ADDR_ECHO, (uint8_t) scpiEchoEnable);
+  EEPROM.put(EEPROM_ADDR_PROMPT, (uint8_t) scpiPromptEnable);
 
-  uint8_t EEPROMecho;
-  EEPROM.get(EEPROM_ADDR_ECHO, EEPROMecho);
-  if (EEPROMecho != (uint8_t)scpiEchoEnable) EEPROM.put(EEPROM_ADDR_ECHO, (uint8_t)scpiEchoEnable);
+  // Persist per-channel settings (CH0 at original addresses, CH1 at CH1_ addresses)
+  EEPROM.put(EEPROM_ADDR_STAB_THRESH, stabThreshold[0]);
+  EEPROM.put(EEPROM_ADDR_ADAPT_ENABLE, (uint8_t) adaptiveFilterEnable[0]);
+  EEPROM.put(EEPROM_ADDR_ADAPT_THRESH, adaptiveFilterPct[0]);
+  EEPROM.put(EEPROM_ADDR_ADAPT_TIME, adaptiveFilterTimeUs[0]);
+  EEPROM.put(EEPROM_ADDR_ADC_INVERT, (uint8_t) adcInvert[0]);
+  EEPROM.put(EEPROM_ADDR_CH1_STAB_THRESH, stabThreshold[1]);
+  EEPROM.put(EEPROM_ADDR_CH1_ADAPT_ENABLE, (uint8_t) adaptiveFilterEnable[1]);
+  EEPROM.put(EEPROM_ADDR_CH1_ADAPT_THRESH, adaptiveFilterPct[1]);
+  EEPROM.put(EEPROM_ADDR_CH1_ADAPT_TIME, adaptiveFilterTimeUs[1]);
+  EEPROM.put(EEPROM_ADDR_CH1_ADC_INVERT, (uint8_t) adcInvert[1]);
 
-  uint8_t EEPROMprompt;
-  EEPROM.get(EEPROM_ADDR_PROMPT, EEPROMprompt);
-  if (EEPROMprompt != (uint8_t)scpiPromptEnable) EEPROM.put(EEPROM_ADDR_PROMPT, (uint8_t)scpiPromptEnable);
-
-  float EEPROMstabThresh;
-  EEPROM.get(EEPROM_ADDR_STAB_THRESH, EEPROMstabThresh);
-  if (EEPROMstabThresh != stabThreshold) EEPROM.put(EEPROM_ADDR_STAB_THRESH, stabThreshold);
-
-  float EEPROMoverCap;
-  EEPROM.get(EEPROM_ADDR_OVER_CAP, EEPROMoverCap);
-  if (EEPROMoverCap != overloadCapacity) EEPROM.put(EEPROM_ADDR_OVER_CAP, overloadCapacity);
-
-  uint8_t EEPROMadaptEn;
-  EEPROM.get(EEPROM_ADDR_ADAPT_ENABLE, EEPROMadaptEn);
-  if (EEPROMadaptEn != (uint8_t)adaptiveFilterEnable) EEPROM.put(EEPROM_ADDR_ADAPT_ENABLE, (uint8_t)adaptiveFilterEnable);
-
-  float EEPROMadaptThr;
-  EEPROM.get(EEPROM_ADDR_ADAPT_THRESH, EEPROMadaptThr);
-  if (EEPROMadaptThr != adaptiveFilterPct) EEPROM.put(EEPROM_ADDR_ADAPT_THRESH, adaptiveFilterPct);
-
-  uint32_t EEPROMadaptTime;
-  EEPROM.get(EEPROM_ADDR_ADAPT_TIME, EEPROMadaptTime);
-  if (EEPROMadaptTime != adaptiveFilterTimeUs) EEPROM.put(EEPROM_ADDR_ADAPT_TIME, adaptiveFilterTimeUs);
-
-  DBG_PRINTF("EEPROMextADCweightMax: %f\n", EEPROMextADCweightMax);
-  DBG_PRINTF("extADCweightMax: %f\n", extADCweightMax);
-  if(extADCweightMax != EEPROMextADCweightMax)
-  {
-    EEPROM.put(EEPROM_ADDR_WEIGHT_MAX, extADCweightMax);
-    DBG_PRINTF("Updating extADCweightMax: %f", extADCweightMax);
-  }
   vTaskDelay(50/portTICK_PERIOD_MS);
-  EEPROM.commit();  // Save our settings to EEPROM
+  EEPROM.commit();
   vTaskDelay(50/portTICK_PERIOD_MS);
 
   // Disable LCD backlight, clear LCD, power down
