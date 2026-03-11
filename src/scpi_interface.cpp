@@ -89,10 +89,12 @@ static scpi_result_t SCPI_Control(scpi_t *context, scpi_ctrl_name_t ctrl, scpi_r
 
 static scpi_result_t SCPI_Reset(scpi_t *context) {
     (void) context;
+    taskENTER_CRITICAL(&measMux);
     for (int c = 0; c < NUM_CHANNELS; c++) {
         tareValue[c] = 0.0f;
         extADCRunAV[c].clear();
     }
+    taskEXIT_CRITICAL(&measMux);
     DBG_PRINTF("SCPI *RST executed\r\n");
     return SCPI_RES_OK;
 }
@@ -306,6 +308,7 @@ static scpi_result_t Conf_UnitCh(scpi_t *context, int ch) {
         return SCPI_RES_ERR;
     }
     e_unitVal newUnit = (e_unitVal) val;
+    bool changed = false;
     taskENTER_CRITICAL(&measMux);
     if (newUnit != unitVal[ch]) {
         float convFactor = unitConversionFactor(unitVal[ch], newUnit);
@@ -313,8 +316,14 @@ static scpi_result_t Conf_UnitCh(scpi_t *context, int ch) {
         extADCweightMax[ch] *= convFactor;
         extADCRunAV[ch].clear();
         unitVal[ch] = newUnit;
+        changed = true;
     }
     taskEXIT_CRITICAL(&measMux);
+    if (changed) {
+        EEPROM.put(eepromAddrUnitVal(ch), unitVal[ch]);
+        EEPROM.put(eepromAddrOverCap(ch), overloadCapacity[ch]);
+        EEPROM.commit();
+    }
     return SCPI_RES_OK;
 }
 static scpi_result_t Conf_UnitCh0(scpi_t *context) { return Conf_UnitCh(context, 0); }
@@ -610,7 +619,9 @@ static scpi_result_t Cal_ValueCh(scpi_t *context, int ch) {
         SCPI_ErrorPush(context, SCPI_ERROR_ILLEGAL_PARAMETER_VALUE);
         return SCPI_RES_ERR;
     }
+    taskENTER_CRITICAL(&measMux);
     calValue[ch] = (float) val.content.value;
+    taskEXIT_CRITICAL(&measMux);
     EEPROM.put(eepromAddrCalValue(ch), calValue[ch]);
     EEPROM.commit();
     return SCPI_RES_OK;
@@ -743,20 +754,26 @@ static scpi_result_t Cal_SpanExecCh(scpi_t *context, int ch) {
         SCPI_ErrorPush(context, SCPI_ERROR_EXECUTION_ERROR);
         return SCPI_RES_ERR;
     }
-    float newCalValue = (float)(extADCResultCh[ch] - zeroValue[ch]) / (float) calWeight[ch];
+    int32_t snapRaw;
+    int32_t snapZero;
+    taskENTER_CRITICAL(&measMux);
+    snapRaw  = extADCResultCh[ch];
+    snapZero = zeroValue[ch];
+    taskEXIT_CRITICAL(&measMux);
+    float newCalValue = (float)(snapRaw - snapZero) / (float) calWeight[ch];
     if (newCalValue <= 0.0f) {
         SCPI_ErrorPush(context, SCPI_ERROR_EXECUTION_ERROR);
         return SCPI_RES_ERR;
     }
+    taskENTER_CRITICAL(&measMux);
     calValue[ch] = newCalValue;
+    extADCRunAV[ch].clear();
+    taskEXIT_CRITICAL(&measMux);
     EEPROM.put(eepromAddrCalValue(ch), calValue[ch]);
     EEPROM.put(eepromAddrZeroValue(ch), zeroValue[ch]);
     EEPROM.put(eepromAddrCalWeight(ch), calWeight[ch]);
     EEPROM.put(eepromAddrCalUnit(ch), calUnit[ch]);
     EEPROM.commit();
-    taskENTER_CRITICAL(&measMux);
-    extADCRunAV[ch].clear();
-    taskEXIT_CRITICAL(&measMux);
     DBG_PRINTF("CAL:SPAN:EXEC CH%d calValue=%.6f\r\n", ch, (double) calValue[ch]);
     return SCPI_RES_OK;
 }
