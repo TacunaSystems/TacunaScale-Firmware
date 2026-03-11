@@ -852,6 +852,9 @@ void TaskExtAnalogRead(void *pvParameters)
     // Apply per-channel polarity inversion to locals before writing globals
     if (adcInvert[0]) { ch0 = -ch0; }
     if (adcInvert[1]) { ch1 = -ch1; }
+    // Update shared measurement data (synchronized with SCPI reads)
+    taskENTER_CRITICAL(&measMux);
+
     extADCResultCh[0] = ch0;
     extADCResultCh[1] = ch1;
     extADCResult = ch0 + ch1;  // combined raw for power-down detection
@@ -865,8 +868,6 @@ void TaskExtAnalogRead(void *pvParameters)
       extADCweight[c] = removeNegativeSignFromZero(extADCweight[c]);
     }
 
-    // Update shared measurement data (synchronized with SCPI reads)
-    taskENTER_CRITICAL(&measMux);
     for (int c = 0; c < NUM_CHANNELS; c++) {
       if (fabsf(extADCweight[c]) > fabsf(extADCweightMax[c]))
       {

@@ -165,11 +165,15 @@ static scpi_result_t Meas_WeightCh1Q(scpi_t *context) { return Meas_WeightChQ(co
 
 /* Sum: both channels converted to CH0's display unit */
 static scpi_result_t Meas_WeightSumQ(scpi_t *context) {
+    float avg0, avg1;
+    e_unitVal u0, u1;
     taskENTER_CRITICAL(&measMux);
-    float avg0 = extADCRunAV[0].getAverage();
-    float avg1 = extADCRunAV[1].getAverage();
+    avg0 = extADCRunAV[0].getAverage();
+    avg1 = extADCRunAV[1].getAverage();
+    u0 = unitVal[0];
+    u1 = unitVal[1];
     taskEXIT_CRITICAL(&measMux);
-    float sum = avg0 + avg1 * unitConversionFactor(unitVal[1], unitVal[0]);
+    float sum = avg0 + avg1 * unitConversionFactor(u1, u0);
     SCPI_ResultFloat(context, sum);
     return SCPI_RES_OK;
 }
@@ -332,16 +336,22 @@ static scpi_result_t Conf_TareCh(scpi_t *context, int ch) {
     scpi_number_t val;
     if (SCPI_ParamNumber(context, scpi_special_numbers_def, &val, FALSE)) {
         /* Explicit tare value provided */
+        taskENTER_CRITICAL(&measMux);
         tareValue[ch] = (float) val.content.value;
+        extADCRunAV[ch].clear();
+        taskEXIT_CRITICAL(&measMux);
     } else {
         /* No parameter — auto-tare from current reading */
+        taskENTER_CRITICAL(&measMux);
         if (calValue[ch] == 0.0f) {
+            taskEXIT_CRITICAL(&measMux);
             SCPI_ErrorPush(context, SCPI_ERROR_EXECUTION_ERROR);
             return SCPI_RES_ERR;
         }
         tareValue[ch] = (extADCResultCh[ch] - zeroValue[ch]) / calValue[ch];
+        extADCRunAV[ch].clear();
+        taskEXIT_CRITICAL(&measMux);
     }
-    extADCRunAV[ch].clear();
     return SCPI_RES_OK;
 }
 static scpi_result_t Conf_TareCh0(scpi_t *context) { return Conf_TareCh(context, 0); }
@@ -358,9 +368,11 @@ static scpi_result_t Conf_TareCh1Q(scpi_t *context) { return Conf_TareChQ(contex
 
 static scpi_result_t Conf_ZeroCh(scpi_t *context, int ch) {
     (void) context;
+    taskENTER_CRITICAL(&measMux);
     zeroValue[ch] = extADCResultCh[ch];
     tareValue[ch] = 0;
     extADCRunAV[ch].clear();
+    taskEXIT_CRITICAL(&measMux);
     EEPROM.put(eepromAddrZeroValue(ch), zeroValue[ch]);
     EEPROM.commit();
     return SCPI_RES_OK;
@@ -945,7 +957,7 @@ static scpi_result_t Sys_EepromQ(scpi_t *context) {
         SCPI_ChoiceToName(unit_choices, (int32_t) ee_calUnit[c], &cal_unit_name[c]);
     }
 
-    char buf[1024];
+    static char buf[1024];
     snprintf(buf, sizeof(buf),
         "CH0:{calValue=%.6f,zeroValue=%ld,unit=%s,"
         "calWeight=%lu,calUnit=%s,weightMax=%.4f,overCap=%.4f,"
