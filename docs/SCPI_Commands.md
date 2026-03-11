@@ -148,7 +148,7 @@ ADC invert is **per-channel**.
 | `CONFigure:ADC:FILTer?` | Query current filter type | — |
 | `CONFigure:ADC:NOTCh <ON\|OFF>` | Enable/disable 50/60 Hz notch rejection (runtime only) | Boolean |
 | `CONFigure:ADC:NOTCh?` | Query notch filter state | — |
-| `CONFigure:ADC:INVert:<ch> <ON\|OFF>` | Invert ADC polarity for channel (persists). Negates all raw and weight values. No re-calibration required. | Boolean |
+| `CONFigure:ADC:INVert:<ch> <ON\|OFF>` | Invert ADC polarity for channel (persists). Negates raw values, zero, tare, and peak — no re-calibration required. Use when load cells produce decreasing counts under load. | Boolean |
 | `CONFigure:ADC:INVert:<ch>?` | Query ADC inversion state for channel | Bool (0/1) |
 
 ### Stability and Overload (per-channel)
@@ -191,13 +191,19 @@ All set commands persist immediately to EEPROM. Replace `<ch>` with `CH0` or
 | `CALibration:VALue:<ch>?` | Query calibration factor (ADC counts per unit weight) | — |
 | `CALibration:VALue:<ch> <val>` | Set calibration factor (must be > 0) | Float |
 | `CALibration:ZERO:<ch>?` | Query zero-reference ADC value | — |
-| `CALibration:ZERO:<ch> <val>` | Set zero-reference ADC value directly | Int32 |
+| `CALibration:ZERO:<ch> <val>` | Set zero-reference ADC value directly (±16777215) | Int32 |
 | `CALibration:WEIGht:<ch>?` | Query calibration weight | — |
 | `CALibration:WEIGht:<ch> <val>` | Set calibration weight | UInt32 |
 | `CALibration:UNIT:<ch>?` | Query calibration unit | — |
 | `CALibration:UNIT:<ch> <KG\|LB\|N\|NM\|LBFT>` | Set calibration unit | Unit token |
 | `CALibration:ZERO:EXEC:<ch>` | Block until settled (~2.5 s), capture zero reference, persist | — |
 | `CALibration:SPAN:EXEC:<ch>` | Block until settled (~2.5 s), auto-compute calValue, persist | — |
+
+**Negative span:** Span calibration accepts both positive and negative ADC
+deltas (i.e. load cells where raw counts decrease under load). The calibration
+factor (`calValue`) is always stored as a positive number. If the ADC delta is
+negative, weight readings will show a negative sign until `CONF:ADC:INVert` is
+enabled for that channel — no re-calibration is needed after toggling invert.
 
 `CALibration:WEIGht` and `CALibration:WEIGht?` are also available as
 `CALibration:FORCe` aliases.
@@ -357,6 +363,12 @@ CAL:UNIT:CH1 LB
 CAL:WEIG:CH1 50
 CAL:ZERO:EXEC:CH1
 CAL:SPAN:EXEC:CH1
+MEAS:WEIG:CH1?
+→ 50.0000
+
+# If readings show negative after calibration, the load cell
+# produces decreasing counts under load — toggle ADC invert:
+CONF:ADC:INV:CH1 ON
 MEAS:WEIG:CH1?
 → 50.0000
 
