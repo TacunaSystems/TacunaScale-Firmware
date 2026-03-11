@@ -173,6 +173,7 @@ float v5vVolts = 0.0;
 
 bool configSwitch1 = 0;
 bool configSwitch2 = 0;
+e_displayMode displayMode = DISP_MODE_DEFAULT;
 
 e_backlightEnable backlightEnable = off;
 uint8_t backlightPWM = BACKLIGHT_PWM_DEFAULT;  // 0-100 percent
@@ -507,6 +508,17 @@ void setup() {
     EEPROM.put(EEPROM_ADDR_CH1_ADC_INVERT, (uint8_t) adcInvert[1]);
     EEPROM.commit();
     DBG_PRINTLN("EEPROM: initialized unset CH1 fields with defaults");
+  }
+
+  // --- Display mode EEPROM load ---
+  uint8_t ee_dispMode;
+  EEPROM.get(EEPROM_ADDR_DISP_MODE, ee_dispMode);
+  if (ee_dispMode < DISP_MODE_COUNT) {
+    displayMode = (e_displayMode) ee_dispMode;
+  } else {
+    displayMode = DISP_MODE_DEFAULT;
+    EEPROM.put(EEPROM_ADDR_DISP_MODE, (uint8_t) displayMode);
+    EEPROM.commit();
   }
 
   ledcWrite(LCD_BACKLIGHT, pwmPercentToDuty(backlightPWM) * (backlightEnable != off));
@@ -1150,10 +1162,19 @@ void UpdateWeightReadingLCD()
   {
     u8g2.clearBuffer();
 
-    if (configSwitch1) {
-      // --- Single channel mode (SW1=ON): original layout, Ch0 only ---
+    if (displayMode == DISP_SINGLE || displayMode == DISP_SUM) {
+      // --- Single-value layout: CH0 only or CH0+CH1 summed ---
+      float displayWeight;
+      if (displayMode == DISP_SUM) {
+        float avg0 = extADCRunAV[0].getAverage();
+        float avg1 = extADCRunAV[1].getAverage();
+        displayWeight = avg0 + avg1 * unitConversionFactor(unitVal[1], unitVal[0]);
+      } else {
+        displayWeight = extADCRunAV[0].getAverage();
+      }
+
       u8g2.setFont(WVAL_FONT);
-      String s_w = String(extADCRunAV[0].getAverage(), WVAL_DEC_PLS);
+      String s_w = String(displayWeight, WVAL_DEC_PLS);
       u8g2.setCursor(WVAL_X_POS-u8g2.getStrWidth(s_w.substring(s_w.length()-WVAL_DEC_PLS).c_str())-DEC_PT_S_PX+((DEC_PT_S_PX-DEC_PT_W_PX)/2)-DEC_PT_W_PX-1, WVAL_Y_POS);
       u8g2.print(".");
       u8g2.setCursor(WVAL_X_POS-u8g2.getStrWidth((s_w.c_str()+1))-DEC_PT_S_PX, WVAL_Y_POS);
@@ -1168,7 +1189,7 @@ void UpdateWeightReadingLCD()
       u8g2.setCursor(u8g2.getDisplayWidth() - u8g2.getStrWidth(uStr), UNIT_Y_POS);
       u8g2.print(uStr);
     } else {
-      // --- Dual channel mode (SW1=OFF): split display ---
+      // --- Dual channel mode: split display ---
       // Layout: Ch0 top half (y=0..31), Ch1 bottom half (y=32..63)
       for (int c = 0; c < NUM_CHANNELS; c++) {
         int yBase = c * 32;  // 0 for Ch0, 32 for Ch1
@@ -1490,6 +1511,7 @@ void powerDown(void)
   EEPROM.put(EEPROM_ADDR_BACKLIGHT_PWM, backlightPWM);
   EEPROM.put(EEPROM_ADDR_ECHO, (uint8_t) scpiEchoEnable);
   EEPROM.put(EEPROM_ADDR_PROMPT, (uint8_t) scpiPromptEnable);
+  EEPROM.put(EEPROM_ADDR_DISP_MODE, (uint8_t) displayMode);
 
   // Persist per-channel settings (CH0 at original addresses, CH1 at CH1_ addresses)
   EEPROM.put(EEPROM_ADDR_STAB_THRESH, stabThreshold[0]);

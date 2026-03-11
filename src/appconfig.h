@@ -23,6 +23,9 @@
 enum e_backlightEnable {off = 0, on = 1, on_motion = 2};
 enum e_unitVal {kg = 0, lb = 1, N = 2, Nm = 3, lbft = 4};
 #define UNIT_VAL_COUNT 5
+enum e_displayMode {DISP_SINGLE = 0, DISP_DUAL = 1, DISP_SUM = 2};
+#define DISP_MODE_COUNT 3
+#define DISP_MODE_DEFAULT DISP_SINGLE
 
 // EEPROM address map (shared between PennerScale.cpp and scpi_interface.cpp)
 #define EEPROM_ADDR_CAL_VALUE    0
@@ -54,7 +57,8 @@ enum e_unitVal {kg = 0, lb = 1, N = 2, Nm = 3, lbft = 4};
 #define EEPROM_ADDR_CH1_ADAPT_THRESH (EEPROM_ADDR_CH1_ADAPT_ENABLE + (int)sizeof(uint8_t))
 #define EEPROM_ADDR_CH1_ADAPT_TIME   (EEPROM_ADDR_CH1_ADAPT_THRESH + (int)sizeof(float))
 #define EEPROM_ADDR_CH1_ADC_INVERT   (EEPROM_ADDR_CH1_ADAPT_TIME  + (int)sizeof(uint32_t))
-#define EEPROM_ADDR_END              (EEPROM_ADDR_CH1_ADC_INVERT  + (int)sizeof(uint8_t))
+#define EEPROM_ADDR_DISP_MODE        (EEPROM_ADDR_CH1_ADC_INVERT  + (int)sizeof(uint8_t))
+#define EEPROM_ADDR_END              (EEPROM_ADDR_DISP_MODE       + (int)sizeof(uint8_t))
 #define EEPROM_SIZE_BYTES            EEPROM_ADDR_END
 
 // Power good pins (shared — read by SCPI handlers)

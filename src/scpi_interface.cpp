@@ -49,6 +49,7 @@ extern uint32_t adaptiveFilterTimeUs[NUM_CHANNELS];
 extern bool    configSwitch1;
 extern bool    adcInvert[NUM_CHANNELS];
 extern bool    configSwitch2;
+extern e_displayMode displayMode;
 extern PRDC_AD7193 AD7193;
 
 /* ------------------------------------------------------------------ */
@@ -116,6 +117,13 @@ static const scpi_choice_def_t unit_choices[] = {
 static const scpi_choice_def_t filter_choices[] = {
     {"SINC3", (int32_t) AD7193_MODE_SINC3},
     {"SINC4", (int32_t) AD7193_MODE_SINC4},
+    SCPI_CHOICE_LIST_END
+};
+
+static const scpi_choice_def_t display_mode_choices[] = {
+    {"SINGle",  (int32_t) DISP_SINGLE},
+    {"DUAL",    (int32_t) DISP_DUAL},
+    {"SUM",     (int32_t) DISP_SUM},
     SCPI_CHOICE_LIST_END
 };
 
@@ -864,6 +872,27 @@ static scpi_result_t Sys_FwQ(scpi_t *context) {
 }
 
 /* Forward declarations for functions in PennerScale.cpp */
+/* CONFigure:DISPlay:MODE <SINGle|DUAL|SUM> — set display mode (persists) */
+static scpi_result_t Conf_DispMode(scpi_t *context) {
+    int32_t val;
+    if (!SCPI_ParamChoice(context, display_mode_choices, &val, TRUE)) {
+        return SCPI_RES_ERR;
+    }
+    displayMode = (e_displayMode) val;
+    EEPROM.put(EEPROM_ADDR_DISP_MODE, (uint8_t) displayMode);
+    EEPROM.commit();
+    return SCPI_RES_OK;
+}
+
+/* CONFigure:DISPlay:MODE? */
+static scpi_result_t Conf_DispModeQ(scpi_t *context) {
+    const char *name = NULL;
+    SCPI_ChoiceToName(display_mode_choices, (int32_t) displayMode, &name);
+    if (!name) name = "?";
+    SCPI_ResultCharacters(context, name, strlen(name));
+    return SCPI_RES_OK;
+}
+
 extern void powerDown(void);
 extern void wakeFromIdleMode(void);
 static scpi_result_t Sys_PowerDown(scpi_t *context) {
@@ -1091,6 +1120,10 @@ static const scpi_command_t scpi_commands[] = {
 
     { .pattern = "CONFigure:ZERO:CH0",                    .callback = Conf_ZeroCh0, },
     { .pattern = "CONFigure:ZERO:CH1",                    .callback = Conf_ZeroCh1, },
+
+    /* Display mode */
+    { .pattern = "CONFigure:DISPlay:MODE",                .callback = Conf_DispMode, },
+    { .pattern = "CONFigure:DISPlay:MODE?",               .callback = Conf_DispModeQ, },
 
     /* ADC configuration (shared — physical ADC) */
     { .pattern = "CONFigure:ADC:RATE",                    .callback = Conf_AdcRate, },
