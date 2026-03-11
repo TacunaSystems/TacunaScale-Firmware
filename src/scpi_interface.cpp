@@ -212,6 +212,10 @@ static scpi_result_t Meas_WeightMaxCh(scpi_t *context, int ch) {
     if (!SCPI_ParamNumber(context, scpi_special_numbers_def, &val, TRUE)) {
         return SCPI_RES_ERR;
     }
+    if (fabs(val.content.value) > 16777216.0) {
+        SCPI_ErrorPush(context, SCPI_ERROR_ILLEGAL_PARAMETER_VALUE);
+        return SCPI_RES_ERR;
+    }
     taskENTER_CRITICAL(&measMux);
     extADCweightMax[ch] = (float) val.content.value;
     taskEXIT_CRITICAL(&measMux);
@@ -346,6 +350,10 @@ static scpi_result_t Conf_TareCh(scpi_t *context, int ch) {
     scpi_number_t val;
     if (SCPI_ParamNumber(context, scpi_special_numbers_def, &val, FALSE)) {
         /* Explicit tare value provided */
+        if (fabs(val.content.value) > 16777216.0) {
+            SCPI_ErrorPush(context, SCPI_ERROR_ILLEGAL_PARAMETER_VALUE);
+            return SCPI_RES_ERR;
+        }
         taskENTER_CRITICAL(&measMux);
         tareValue[ch] = (float) val.content.value;
         extADCRunAV[ch].clear();
@@ -509,7 +517,7 @@ static scpi_result_t Conf_OverCapCh(scpi_t *context, int ch) {
     if (!SCPI_ParamNumber(context, scpi_special_numbers_def, &val, TRUE)) {
         return SCPI_RES_ERR;
     }
-    if (val.content.value <= 0.0 || val.content.value > (double)FLT_MAX) {
+    if (val.content.value <= 0.0 || val.content.value > 16777216.0) {
         SCPI_ErrorPush(context, SCPI_ERROR_ILLEGAL_PARAMETER_VALUE);
         return SCPI_RES_ERR;
     }
@@ -616,7 +624,7 @@ static scpi_result_t Cal_ValueCh(scpi_t *context, int ch) {
     if (!SCPI_ParamNumber(context, scpi_special_numbers_def, &val, TRUE)) {
         return SCPI_RES_ERR;
     }
-    if (val.content.value <= 0.0 || val.content.value > (double)FLT_MAX) {
+    if (val.content.value <= 0.0 || val.content.value > 16777216.0) {
         SCPI_ErrorPush(context, SCPI_ERROR_ILLEGAL_PARAMETER_VALUE);
         return SCPI_RES_ERR;
     }
@@ -642,6 +650,10 @@ static scpi_result_t Cal_ZeroCh1Q(scpi_t *context) { return Cal_ZeroChQ(context,
 static scpi_result_t Cal_ZeroCh(scpi_t *context, int ch) {
     int32_t val;
     if (!SCPI_ParamInt32(context, &val, TRUE)) {
+        return SCPI_RES_ERR;
+    }
+    if (val < 0 || val > 16777215) {
+        SCPI_ErrorPush(context, SCPI_ERROR_ILLEGAL_PARAMETER_VALUE);
         return SCPI_RES_ERR;
     }
     taskENTER_CRITICAL(&measMux);
