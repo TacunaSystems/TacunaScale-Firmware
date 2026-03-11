@@ -322,6 +322,7 @@ static scpi_result_t Conf_UnitCh(scpi_t *context, int ch) {
     if (changed) {
         EEPROM.put(eepromAddrUnitVal(ch), unitVal[ch]);
         EEPROM.put(eepromAddrOverCap(ch), overloadCapacity[ch]);
+        EEPROM.put(eepromAddrWeightMax(ch), extADCweightMax[ch]);
         EEPROM.commit();
     }
     return SCPI_RES_OK;
@@ -643,7 +644,10 @@ static scpi_result_t Cal_ZeroCh(scpi_t *context, int ch) {
     if (!SCPI_ParamInt32(context, &val, TRUE)) {
         return SCPI_RES_ERR;
     }
+    taskENTER_CRITICAL(&measMux);
     zeroValue[ch] = val;
+    extADCRunAV[ch].clear();
+    taskEXIT_CRITICAL(&measMux);
     EEPROM.put(eepromAddrZeroValue(ch), zeroValue[ch]);
     EEPROM.commit();
     return SCPI_RES_OK;
@@ -760,7 +764,7 @@ static scpi_result_t Cal_SpanExecCh(scpi_t *context, int ch) {
     snapRaw  = extADCResultCh[ch];
     snapZero = zeroValue[ch];
     taskEXIT_CRITICAL(&measMux);
-    float newCalValue = (float)(snapRaw - snapZero) / (float) calWeight[ch];
+    float newCalValue = fabsf((float)(snapRaw - snapZero)) / (float) calWeight[ch];
     if (newCalValue <= 0.0f) {
         SCPI_ErrorPush(context, SCPI_ERROR_EXECUTION_ERROR);
         return SCPI_RES_ERR;

@@ -1453,17 +1453,22 @@ void doCalibration()
     sendBufferSPISafe();
     vTaskDelay(5000/portTICK_PERIOD_MS);
 
-    int32_t spanRaw = extADCResultCh[c];
-    float spanCounts = (float)spanRaw - (float)zeroValue[c];
+    int32_t spanRaw;
+    int32_t zeroSnap;
+    taskENTER_CRITICAL(&measMux);
+    spanRaw  = extADCResultCh[c];
+    zeroSnap = zeroValue[c];
+    taskEXIT_CRITICAL(&measMux);
+    float spanCounts = (float)spanRaw - (float)zeroSnap;
     if (fabsf(spanCounts) < 1.0f || calWeight[c] == 0) {
       DBG_PRINTF("CH%d: invalid span (raw=%d zero=%d wt=%u) — skipping\n",
-                 c, spanRaw, zeroValue[c], calWeight[c]);
+                 c, spanRaw, zeroSnap, calWeight[c]);
       continue;
     }
     calValue[c] = spanCounts / (float)calWeight[c];
 
     DBG_PRINTF("CH%d: adc=%d zero=%d calVal=%f unit=%s weight=%u\n",
-               c, spanRaw, zeroValue[c], calValue[c],
+               c, spanRaw, zeroSnap, calValue[c],
                unitAbbr[calUnit[c]], calWeight[c]);
 
     // Persist this channel immediately (safe if process interrupted)
