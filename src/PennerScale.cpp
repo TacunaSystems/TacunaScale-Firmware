@@ -1465,7 +1465,7 @@ void doCalibration()
                  c, spanRaw, zeroSnap, calWeight[c]);
       continue;
     }
-    calValue[c] = spanCounts / (float)calWeight[c];
+    calValue[c] = fabsf(spanCounts) / (float)calWeight[c];
 
     DBG_PRINTF("CH%d: adc=%d zero=%d calVal=%f unit=%s weight=%u\n",
                c, spanRaw, zeroSnap, calValue[c],
