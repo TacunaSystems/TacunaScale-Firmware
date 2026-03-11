@@ -1430,7 +1430,9 @@ void doCalibration()
     sendBufferSPISafe();
     vTaskDelay(5000/portTICK_PERIOD_MS);
 
+    taskENTER_CRITICAL(&measMux);
     zeroValue[c] = extADCResultCh[c];
+    taskEXIT_CRITICAL(&measMux);
 
     // --- Span capture ---
     u8g2.clearBuffer();
