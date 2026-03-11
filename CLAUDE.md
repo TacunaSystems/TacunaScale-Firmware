@@ -1,6 +1,8 @@
 # TacunaScale Firmware
 
-ESP32-S3 based scale readout device with SCPI interface and OLED display.
+ESP32-S3 based dual-channel scale readout device with SCPI interface and OLED display.
+Supports two independent ADC channels (CH0, CH1) with per-channel calibration, units, and filtering.
+Display modes: SINGLE (CH0 only), DUAL (split-screen), SUM (CH0+CH1 combined).
 
 ## Build
 
