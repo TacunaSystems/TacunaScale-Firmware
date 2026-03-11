@@ -1106,6 +1106,30 @@ static const scpi_command_t scpi_commands[] = {
     { .pattern = "MEASure:WEIGht:OVERload:CH0?",         .callback = Meas_WeightOverloadCh0Q, },
     { .pattern = "MEASure:WEIGht:OVERload:CH1?",         .callback = Meas_WeightOverloadCh1Q, },
 
+    /* ---- Force aliases (same callbacks as WEIGht) ---- */
+    { .pattern = "MEASure:FORCe:CH0?",                    .callback = Meas_WeightCh0Q, },
+    { .pattern = "MEASure:FORCe:CH1?",                    .callback = Meas_WeightCh1Q, },
+    { .pattern = "MEASure:FORCe:SUM?",                    .callback = Meas_WeightSumQ, },
+    { .pattern = "MEASure:FORCe:RAW:CH0?",                .callback = Meas_WeightRawCh0Q, },
+    { .pattern = "MEASure:FORCe:RAW:CH1?",                .callback = Meas_WeightRawCh1Q, },
+    { .pattern = "MEASure:FORCe:RAW:SUM?",                .callback = Meas_WeightRawSumQ, },
+    { .pattern = "MEASure:FORCe:MAX:CH0",                 .callback = Meas_WeightMaxCh0, },
+    { .pattern = "MEASure:FORCe:MAX:CH0?",                .callback = Meas_WeightMaxCh0Q, },
+    { .pattern = "MEASure:FORCe:MAX:CH1",                 .callback = Meas_WeightMaxCh1, },
+    { .pattern = "MEASure:FORCe:MAX:CH1?",                .callback = Meas_WeightMaxCh1Q, },
+    { .pattern = "MEASure:FORCe:AVERage:COUNt:CH0?",      .callback = Meas_WeightAvgCountCh0Q, },
+    { .pattern = "MEASure:FORCe:AVERage:COUNt:CH1?",      .callback = Meas_WeightAvgCountCh1Q, },
+    { .pattern = "MEASure:FORCe:AVERage:SIZE:CH0?",       .callback = Meas_WeightAvgSizeCh0Q, },
+    { .pattern = "MEASure:FORCe:AVERage:SIZE:CH1?",       .callback = Meas_WeightAvgSizeCh1Q, },
+    { .pattern = "MEASure:FORCe:SDEViation:CH0?",         .callback = Meas_WeightSdevCh0Q, },
+    { .pattern = "MEASure:FORCe:SDEViation:CH1?",         .callback = Meas_WeightSdevCh1Q, },
+    { .pattern = "MEASure:FORCe:STABle:CH0?",             .callback = Meas_WeightStableCh0Q, },
+    { .pattern = "MEASure:FORCe:STABle:CH1?",             .callback = Meas_WeightStableCh1Q, },
+    { .pattern = "MEASure:FORCe:GROSs:CH0?",              .callback = Meas_WeightGrossCh0Q, },
+    { .pattern = "MEASure:FORCe:GROSs:CH1?",              .callback = Meas_WeightGrossCh1Q, },
+    { .pattern = "MEASure:FORCe:OVERload:CH0?",           .callback = Meas_WeightOverloadCh0Q, },
+    { .pattern = "MEASure:FORCe:OVERload:CH1?",           .callback = Meas_WeightOverloadCh1Q, },
+
     /* ---- Configuration: per-channel ---- */
 
     { .pattern = "CONFigure:UNIT:CH0",                    .callback = Conf_UnitCh0, },
@@ -1191,6 +1215,12 @@ static const scpi_command_t scpi_commands[] = {
 
     { .pattern = "CALibration:SPAN:EXEC:CH0",             .callback = Cal_SpanExecCh0, },
     { .pattern = "CALibration:SPAN:EXEC:CH1",             .callback = Cal_SpanExecCh1, },
+
+    /* Force aliases for calibration weight */
+    { .pattern = "CALibration:FORCe:CH0",                .callback = Cal_WeightCh0, },
+    { .pattern = "CALibration:FORCe:CH0?",               .callback = Cal_WeightCh0Q, },
+    { .pattern = "CALibration:FORCe:CH1",                .callback = Cal_WeightCh1, },
+    { .pattern = "CALibration:FORCe:CH1?",               .callback = Cal_WeightCh1Q, },
 
     /* ---- System ---- */
 

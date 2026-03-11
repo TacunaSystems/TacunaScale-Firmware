@@ -1154,7 +1154,7 @@ void TaskBKLButton(void *pvParameters)
 // Dual-scale display fonts
 #define DUAL_WVAL_FONT u8g2_font_inb16_mn   // Smaller weight font for split display
 #define DUAL_UNIT_FONT u8g2_font_6x12_mr    // Smaller unit font for split display
-#define DUAL_LABEL_FONT u8g2_font_4x6_mr    // Tiny label font for channel labels
+#define DUAL_LABEL_FONT u8g2_font_5x8_mr    // Channel label font
 
 void UpdateWeightReadingLCD()
 {
@@ -1193,31 +1193,33 @@ void UpdateWeightReadingLCD()
       // Layout: Ch0 top half (y=0..31), Ch1 bottom half (y=32..63)
       for (int c = 0; c < NUM_CHANNELS; c++) {
         int yBase = c * 32;  // 0 for Ch0, 32 for Ch1
+        int yBottom = yBase + 28;  // baseline: 3px above divider/display bottom
 
-        // Channel label
-        u8g2.setFont(DUAL_LABEL_FONT);
-        char label[4];
-        snprintf(label, sizeof(label), "C%d", c);
-        u8g2.setCursor(0, yBase + 7);
-        u8g2.print(label);
+        // Unit label — right-justified (measure first to position weight)
+        u8g2.setFont(DUAL_UNIT_FONT);
+        e_unitVal uSnap = unitVal[c];
+        const char *uStr = ((int)uSnap >= 0 && (int)uSnap < UNIT_VAL_COUNT)
+            ? unitAbbr[uSnap] : "?";
+        int unitWidth = u8g2.getStrWidth(uStr);
+        int unitX = 128 - unitWidth;
+        u8g2.setCursor(unitX, yBottom);
+        u8g2.print(uStr);
 
-        // Weight value — right-aligned
+        // Weight value — right-justified, 2px gap before unit
         u8g2.setFont(DUAL_WVAL_FONT);
         char wBuf[12];
         float avg = extADCRunAV[c].getAverage();
         dtostrf(avg, 7, WVAL_DEC_PLS, wBuf);
         int wWidth = u8g2.getStrWidth(wBuf);
-        // Leave room for unit label on the right
-        u8g2.setCursor(96 - wWidth, yBase + 22);
+        u8g2.setCursor(unitX - 2 - wWidth, yBottom);
         u8g2.print(wBuf);
 
-        // Unit label
-        u8g2.setFont(DUAL_UNIT_FONT);
-        e_unitVal uSnap = unitVal[c];
-        const char *uStr = ((int)uSnap >= 0 && (int)uSnap < UNIT_VAL_COUNT)
-            ? unitAbbr[uSnap] : "?";
-        u8g2.setCursor(128 - u8g2.getStrWidth(uStr), yBase + 22);
-        u8g2.print(uStr);
+        // Channel label — drawn last so it's not overwritten by weight font
+        u8g2.setFont(DUAL_LABEL_FONT);
+        char label[5];
+        snprintf(label, sizeof(label), "Ch%d", c);
+        u8g2.setCursor(0, yBase + 9);
+        u8g2.print(label);
       }
 
       // Divider line between channels

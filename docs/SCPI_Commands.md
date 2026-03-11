@@ -88,6 +88,9 @@ All measurement commands are **per-channel**. Replace `<ch>` with `CH0` or
 | `MEASure:WEIGht:GROSs:<ch>?` | Weight before tare subtraction, in display unit | Float |
 | `MEASure:WEIGht:OVERload:<ch>?` | Overload flag: 1 = abs(weight) > capacity, 0 = OK | Bool (0/1) |
 
+All `MEASure:WEIGht` commands are also available as `MEASure:FORCe` aliases
+(e.g. `MEAS:FORC:CH0?` is equivalent to `MEAS:WEIG:CH0?`).
+
 ## Configuration Commands
 
 ### Display Mode
@@ -188,6 +191,9 @@ All set commands persist immediately to EEPROM. Replace `<ch>` with `CH0` or
 | `CALibration:UNIT:<ch> <KG\|LB\|N\|NM\|LBFT>` | Set calibration unit | Unit token |
 | `CALibration:ZERO:EXEC:<ch>` | Block until settled (~2.5 s), capture zero reference, persist | — |
 | `CALibration:SPAN:EXEC:<ch>` | Block until settled (~2.5 s), auto-compute calValue, persist | — |
+
+`CALibration:WEIGht` and `CALibration:WEIGht?` are also available as
+`CALibration:FORCe` aliases.
 
 ## System Commands
 
