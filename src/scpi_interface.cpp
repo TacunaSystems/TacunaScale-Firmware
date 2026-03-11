@@ -720,13 +720,13 @@ static scpi_result_t Cal_ZeroExecCh(scpi_t *context, int ch) {
         SCPI_ErrorPush(context, SCPI_ERROR_EXECUTION_ERROR);
         return SCPI_RES_ERR;
     }
+    taskENTER_CRITICAL(&measMux);
     zeroValue[ch] = extADCResultCh[ch];
     tareValue[ch] = 0;
-    EEPROM.put(eepromAddrZeroValue(ch), zeroValue[ch]);
-    EEPROM.commit();
-    taskENTER_CRITICAL(&measMux);
     extADCRunAV[ch].clear();
     taskEXIT_CRITICAL(&measMux);
+    EEPROM.put(eepromAddrZeroValue(ch), zeroValue[ch]);
+    EEPROM.commit();
     DBG_PRINTF("CAL:ZERO:EXEC CH%d zeroValue=%ld\r\n", ch, (long) zeroValue[ch]);
     return SCPI_RES_OK;
 }
