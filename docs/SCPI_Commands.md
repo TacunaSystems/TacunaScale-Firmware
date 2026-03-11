@@ -79,8 +79,8 @@ All measurement commands are **per-channel**. Replace `<ch>` with `CH0` or
 | `MEASure:WEIGht:SUM?` | CH0 + CH1 summed (CH1 converted to CH0's unit) | Float |
 | `MEASure:WEIGht:RAW:<ch>?` | Raw ADC counts for channel | Int32 |
 | `MEASure:WEIGht:RAW:SUM?` | CH0 + CH1 raw ADC counts summed | Int32 |
-| `MEASure:WEIGht:MAX:<ch>?` | Peak weight recorded since last reset | Float |
-| `MEASure:WEIGht:MAX:<ch> <val>` | Set/reset peak weight tracker (persists to EEPROM) | — |
+| `MEASure:WEIGht:MAX:<ch>?` | Peak weight recorded since last clear, in current display unit | Float |
+| `MEASure:WEIGht:MAX:<ch> <val>` | Set/clear peak weight (e.g. `0` to reset; persists to EEPROM) | — |
 | `MEASure:WEIGht:AVERage:COUNt:<ch>?` | Samples currently in running average buffer | Int |
 | `MEASure:WEIGht:AVERage:SIZE:<ch>?` | Running average buffer size (compile-time, default 5) | Int |
 | `MEASure:WEIGht:SDEViation:<ch>?` | Standard deviation of running average buffer | Float |
@@ -90,6 +90,13 @@ All measurement commands are **per-channel**. Replace `<ch>` with `CH0` or
 
 All `MEASure:WEIGht` commands are also available as `MEASure:FORCe` aliases
 (e.g. `MEAS:FORC:CH0?` is equivalent to `MEAS:WEIG:CH0?`).
+
+**Peak weight note:** The peak value is always stored and reported in the
+channel's current display unit. When the unit is changed via `CONF:UNIT`, the
+peak value is automatically converted. The peak is persisted to EEPROM on
+power-down and on unit change, so it survives reboot. Intended for overload
+forensics — query `MEAS:WEIG:MAX:<ch>?` alongside `CONF:UNIT:<ch>?` to
+determine the historical peak load.
 
 ## Configuration Commands
 
