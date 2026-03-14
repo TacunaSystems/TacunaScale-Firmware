@@ -157,7 +157,7 @@ ADC invert is **per-channel**.
 |---------|-------------|-----------|
 | `CONFigure:STABility:THReshold:<ch> <val>` | Stability threshold as fraction of capacity (persists, default 0.0002 = 0.02%) | Float (> 0, ≤ 1) |
 | `CONFigure:STABility:THReshold:<ch>?` | Query current stability threshold for channel | — |
-| `CONFigure:OVERload:CAPacity:<ch> <val>` | Overload capacity in display units (persists, default 500). Auto-converts when display unit changes. | Float (> 0) |
+| `CONFigure:OVERload:CAPacity:<ch> <val>` | Overload capacity in display units (persists, default 500). Auto-converts when display unit changes. | Float (> 0, ≤ 16777216) |
 | `CONFigure:OVERload:CAPacity:<ch>?` | Query current overload capacity for channel | — |
 
 ### Adaptive Filter (per-channel)
@@ -230,8 +230,10 @@ enabled for that channel — no re-calibration is needed after toggling invert.
 | `SYSTem:FW?` | Firmware version string | String |
 | `SYSTem:EEPROM?` | Dump all persisted EEPROM values (comma-separated key=value) | — |
 | `SYSTem:EEPROM:COMMit` | Flush pending EEPROM writes to flash | — |
-| `SYSTem:LOG?` | Read debug log from RAM ring buffer (2 KB) | — |
-| `SYSTem:LOG:CLEar` | Clear the debug log | — |
+| `SYSTem:LOG?` | Read debug log from RAM ring buffer (2 KB). Requires `SCPI_DEBUG` (enabled by default). | — |
+| `SYSTem:LOG:CLEar` | Clear the debug log. Requires `SCPI_DEBUG`. | — |
+| `SYSTem:DIAGnostic:STATS?` | FreeRTOS task runtime stats. Requires `FREERTOS_DIAG` build flag. | — |
+| `SYSTem:DIAGnostic:LIST?` | FreeRTOS task list. Requires `FREERTOS_DIAG` build flag. | — |
 
 > **Note:** DIP switches (SW1, SW2) are read at boot but do not control any
 > firmware feature in v1.2.0. They are reserved for future use. Display mode
