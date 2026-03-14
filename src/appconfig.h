@@ -5,7 +5,10 @@
  * appconfig.h — shared definitions used by PennerScale.cpp and scpi_interface.cpp
  */
 
-#define FW_VER  "1.1.0b"
+#define FW_VER  "1.2.0a"
+
+// Number of independent scale channels
+#define NUM_CHANNELS 2
 
 // FreeRTOS diagnostic SCPI commands (SYST:DIAG:STATS? / SYST:DIAG:LIST?)
 #ifndef FREERTOS_DIAG
@@ -20,6 +23,9 @@
 enum e_backlightEnable {off = 0, on = 1, on_motion = 2};
 enum e_unitVal {kg = 0, lb = 1, N = 2, Nm = 3, lbft = 4};
 #define UNIT_VAL_COUNT 5
+enum e_displayMode {DISP_SINGLE = 0, DISP_DUAL = 1, DISP_SUM = 2};
+#define DISP_MODE_COUNT 3
+#define DISP_MODE_DEFAULT DISP_SINGLE
 
 // EEPROM address map (shared between PennerScale.cpp and scpi_interface.cpp)
 #define EEPROM_ADDR_CAL_VALUE    0
@@ -38,8 +44,22 @@ enum e_unitVal {kg = 0, lb = 1, N = 2, Nm = 3, lbft = 4};
 #define EEPROM_ADDR_ADAPT_THRESH  (EEPROM_ADDR_ADAPT_ENABLE  + (int)sizeof(uint8_t))
 #define EEPROM_ADDR_ADAPT_TIME    (EEPROM_ADDR_ADAPT_THRESH  + (int)sizeof(float))
 #define EEPROM_ADDR_ADC_INVERT    (EEPROM_ADDR_ADAPT_TIME    + (int)sizeof(uint32_t))
-#define EEPROM_ADDR_END           (EEPROM_ADDR_ADC_INVERT   + (int)sizeof(uint8_t))
-#define EEPROM_SIZE_BYTES         EEPROM_ADDR_END
+// --- CH1 per-channel EEPROM (appended after shared data) ---
+#define EEPROM_ADDR_CH1_CAL_VALUE    (EEPROM_ADDR_ADC_INVERT    + (int)sizeof(uint8_t))
+#define EEPROM_ADDR_CH1_ZERO_VALUE   (EEPROM_ADDR_CH1_CAL_VALUE + (int)sizeof(float))
+#define EEPROM_ADDR_CH1_UNIT_VAL     (EEPROM_ADDR_CH1_ZERO_VALUE + (int)sizeof(int32_t))
+#define EEPROM_ADDR_CH1_CAL_WEIGHT   (EEPROM_ADDR_CH1_UNIT_VAL  + (int)sizeof(e_unitVal))
+#define EEPROM_ADDR_CH1_CAL_UNIT     (EEPROM_ADDR_CH1_CAL_WEIGHT + (int)sizeof(uint32_t))
+#define EEPROM_ADDR_CH1_WEIGHT_MAX   (EEPROM_ADDR_CH1_CAL_UNIT  + (int)sizeof(e_unitVal))
+#define EEPROM_ADDR_CH1_OVER_CAP     (EEPROM_ADDR_CH1_WEIGHT_MAX + (int)sizeof(float))
+#define EEPROM_ADDR_CH1_STAB_THRESH  (EEPROM_ADDR_CH1_OVER_CAP  + (int)sizeof(float))
+#define EEPROM_ADDR_CH1_ADAPT_ENABLE (EEPROM_ADDR_CH1_STAB_THRESH + (int)sizeof(float))
+#define EEPROM_ADDR_CH1_ADAPT_THRESH (EEPROM_ADDR_CH1_ADAPT_ENABLE + (int)sizeof(uint8_t))
+#define EEPROM_ADDR_CH1_ADAPT_TIME   (EEPROM_ADDR_CH1_ADAPT_THRESH + (int)sizeof(float))
+#define EEPROM_ADDR_CH1_ADC_INVERT   (EEPROM_ADDR_CH1_ADAPT_TIME  + (int)sizeof(uint32_t))
+#define EEPROM_ADDR_DISP_MODE        (EEPROM_ADDR_CH1_ADC_INVERT  + (int)sizeof(uint8_t))
+#define EEPROM_ADDR_END              (EEPROM_ADDR_DISP_MODE       + (int)sizeof(uint8_t))
+#define EEPROM_SIZE_BYTES            EEPROM_ADDR_END
 
 // Power good pins (shared — read by SCPI handlers)
 #define V3V3_PG 18
